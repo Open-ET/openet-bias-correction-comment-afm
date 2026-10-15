@@ -1,0 +1,187 @@
+cff-version: 1.2.0
+message: "If you use this code or the derived data, please cite the comment and the datasets it builds on."
+title: "Code and data for: Comment on Golkar and de Oliveira (2026): Exact-zero observed evapotranspiration undermines the diagnosis of OpenET bias"
+type: software
+license: MIT
+version: 1.0.0
+doi: 10.5281/zenodo.23383493
+date-released: "2026-10-15"
+repository-code: "https://github.com/montimaj/openet-bias-correction-comment-afm"
+url: "https://doi.org/10.5281/zenodo.23383493"
+authors:
+  - family-names: Kim
+    given-names: Yeonuk
+    affiliation: Desert Research Institute
+  - family-names: Majumdar
+    given-names: Sayantan
+    affiliation: Desert Research Institute
+  - family-names: Volk
+    given-names: John M.
+    affiliation: Desert Research Institute
+  - family-names: ReVelle
+    given-names: Peter
+    affiliation: Desert Research Institute
+  - family-names: Caldwell
+    given-names: Todd G.
+    affiliation: Desert Research Institute
+  - family-names: Huntington
+    given-names: Justin L.
+    affiliation: Desert Research Institute
+keywords:
+  - OpenET
+  - evapotranspiration
+  - eddy covariance
+  - energy balance closure
+  - machine learning
+  - data quality
+references:
+  - type: article
+    authors:
+      - family-names: Golkar
+        given-names: Mohammad Kian
+      - family-names: de Oliveira
+        given-names: Luciano Alves
+    title: "Diagnosing and correcting OpenET satellite evapotranspiration across US climate zones: Error decomposition, explainable AI, and uncertainty quantification"
+    journal: Agricultural and Forest Meteorology
+    volume: 391
+    start: 111524
+    year: 2026
+    doi: 10.1016/j.agrformet.2026.111524
+  - type: data
+    authors:
+      - family-names: Volk
+        given-names: John M.
+    title: "Post-processed data and graphical tools for a CONUS-wide eddy flux evapotranspiration dataset"
+    year: 2023
+    doi: 10.5281/zenodo.7636781
+  - type: data
+    authors:
+      - family-names: Volk
+        given-names: John M.
+    title: "OpenET model data for assessing the accuracy of OpenET satellite-based evapotranspiration data to support water resource and land management applications"
+    year: 2023
+    doi: 10.5281/zenodo.10119477
+  - type: article
+    authors:
+      - family-names: Melton
+        given-names: Forrest S.
+      - family-names: Huntington
+        given-names: Justin
+      - family-names: Grimm
+        given-names: Robyn
+      - family-names: Herring
+        given-names: Jamie
+      - family-names: Hall
+        given-names: Maurice
+      - family-names: Rollison
+        given-names: Dana
+      - family-names: Erickson
+        given-names: Tyler
+      - family-names: Allen
+        given-names: Richard
+      - family-names: Anderson
+        given-names: Martha
+      - family-names: Fisher
+        given-names: Joshua B.
+      - family-names: Kilic
+        given-names: Ayse
+      - family-names: Senay
+        given-names: Gabriel B.
+      - family-names: Volk
+        given-names: John
+      - family-names: Hain
+        given-names: Christopher
+      - family-names: Johnson
+        given-names: Lee
+      - family-names: Ruhoff
+        given-names: Anderson
+      - family-names: Blankenau
+        given-names: Philip
+      - family-names: Bromley
+        given-names: Matt
+      - family-names: Carrara
+        given-names: Will
+      - family-names: Daudert
+        given-names: Britta
+      - family-names: Doherty
+        given-names: Conor
+      - family-names: Dunkerly
+        given-names: Christian
+      - family-names: Friedrichs
+        given-names: MacKenzie
+      - family-names: Guzman
+        given-names: Alberto
+      - family-names: Halverson
+        given-names: Gregory
+      - family-names: Hansen
+        given-names: Jody
+      - family-names: Harding
+        given-names: Jordan
+      - family-names: Kang
+        given-names: Yanghui
+      - family-names: Ketchum
+        given-names: David
+      - family-names: Minor
+        given-names: Blake
+      - family-names: Morton
+        given-names: Charles
+      - family-names: Ortega-Salazar
+        given-names: Samuel
+      - family-names: Ott
+        given-names: Thomas
+      - family-names: Ozdogan
+        given-names: Mutlu
+      - family-names: ReVelle
+        given-names: Peter M.
+      - family-names: Schull
+        given-names: Mitch
+      - family-names: Wang
+        given-names: Carlos
+      - family-names: Yang
+        given-names: Yun
+      - family-names: Anderson
+        given-names: Ray G.
+    title: "OpenET: Filling a critical data gap in water management for the western United States"
+    journal: Journal of the American Water Resources Association
+    volume: 58
+    issue: "6"
+    start: 971
+    end: 994
+    year: 2022
+    doi: 10.1111/1752-1688.12956
+  - type: article
+    authors:
+      - family-names: Volk
+        given-names: John M.
+      - family-names: Dunkerly
+        given-names: Christian
+      - family-names: Majumdar
+        given-names: Sayantan
+      - family-names: Huntington
+        given-names: Justin L.
+      - family-names: Minor
+        given-names: Blake A.
+      - family-names: Kim
+        given-names: Yeonuk
+      - family-names: Morton
+        given-names: Charles G.
+      - family-names: ReVelle
+        given-names: Peter
+      - family-names: Kilic
+        given-names: Ayse
+      - family-names: Melton
+        given-names: Forrest
+      - family-names: Allen
+        given-names: Richard G.
+      - family-names: Pearson
+        given-names: Christopher
+      - family-names: Purdy
+        given-names: Adam J.
+      - family-names: Caldwell
+        given-names: Todd G.
+    title: "Assessing and correcting bias in gridded reference evapotranspiration over agricultural lands across the contiguous United States"
+    journal: Agricultural Water Management
+    volume: 333
+    start: 110647
+    year: 2026
+    doi: 10.1016/j.agwat.2026.110647

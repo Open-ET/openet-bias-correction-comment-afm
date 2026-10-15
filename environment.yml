@@ -1,0 +1,29 @@
+# Exact versions used for the published results (macOS arm64; every pin is also
+# available on conda-forge for linux-64, osx-64 and win-64).
+#   conda env create -f environment.yml && conda activate etcomment
+# Unpinned alternative: pip install -e ".[dev]" (see pyproject.toml).
+name: etcomment
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12.15
+  - numpy=2.5.4
+  - pandas=3.0.6
+  - scipy=1.18.1
+  - matplotlib=3.11.2
+  - geopandas=1.2.0
+  - shapely=2.2.0
+  - pyproj=3.8.0
+  - pyogrio=0.13.0
+  - scikit-learn=1.9.1
+  - xgboost=3.4.2
+  - openpyxl=3.1.5
+  - pillow=12.3.0
+  - requests=2.34.2
+  - pytest=9.1.1
+  - pip
+  - pip:
+      - kgcpy==1.1.8
+      - basemap-data==2.0.0
+      - playwright==1.64.0
+      - -e .

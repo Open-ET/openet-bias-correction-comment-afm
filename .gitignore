@@ -218,3 +218,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project folders kept out of git: inputs and outputs are archived on Zenodo
+# (doi:10.5281/zenodo.23383493); downloads are recreated by the scripts (README)
+paper/
+benchmark_site_plots/
+figures/
+docs/internal/
+data/*
+!data/README.md
+results/
+config/
+# Zenodo deposit built by scripts/13_make_zenodo_deposit.py (upload its files)
+zenodo/
+
+# macOS Finder metadata
+.DS_Store

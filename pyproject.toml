@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "etcomment"
+version = "1.0.0"
+description = "Analysis code for a comment on Golkar & de Oliveira (2026), Agric. For. Meteorol."
+readme = "README.md"
+license = "MIT"
+authors = [
+  {name = "Yeonuk Kim"}, {name = "Sayantan Majumdar"}, {name = "John M. Volk"},
+  {name = "Peter ReVelle"}, {name = "Todd G. Caldwell"}, {name = "Justin L. Huntington"},
+]
+requires-python = ">=3.11"  # pandas 3 needs 3.11+; the published numpy 2.5, scipy 1.18 and pyproj 3.8 need 3.12 (older releases install on 3.11)
+# Exact versions used for the published results: environment.yml
+dependencies = [
+  "numpy", "pandas>=2.1", "scipy", "matplotlib>=3.8", "geopandas>=0.14", "shapely>=2",
+  "pyproj", "pyogrio", "scikit-learn", "xgboost", "openpyxl", "pillow", "requests",
+  "kgcpy==1.1.8", "basemap-data==2.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "playwright"]
+ee = ["earthengine-api"]
+
+[project.urls]
+Repository = "https://github.com/montimaj/openet-bias-correction-comment-afm"
+Archive = "https://doi.org/10.5281/zenodo.23383493"
+Comment-on = "https://doi.org/10.1016/j.agrformet.2026.111524"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "tests"]
+testpaths = ["tests"]
