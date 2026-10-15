@@ -19,6 +19,12 @@ here from public summaries, without BASE files (which need an account):
 * Site pages (ameriflux.lbl.gov/sites/siteinfo/<SITE>): current BASE version,
   its citation year and DOI, and "Years Data Available".  The per-user Data
   Use Log panel is skipped (it is filled in by JavaScript and never parsed).
+  The pages list the site teams' e-mail addresses, which are not needed and
+  are not kept: every address, including mailto: links, is replaced by
+  '[email removed]' before a page is cached (:func:`redact_emails`).  The
+  cache's provenance.json records the md5 and size of the page as served
+  (md5_original, bytes_original) and of the cached copy (md5, bytes); the
+  page_md5 that :func:`site_page_info` reports is the md5 as served.
 
 The pinned summary can be downloaded again (commit SHA, md5).  The web-service
 responses and site pages cannot: they change whenever a BASE version is
@@ -121,13 +127,25 @@ def _record(cache: Path, name: str, meta: dict) -> None:
     tmp.replace(cache / "provenance.json")
 
 
+def _write_atomic(path: Path, data: bytes) -> None:
+    part = path.with_name(path.name + ".part")  # no truncated cache files after an interruption
+    part.write_bytes(data)
+    part.replace(path)
+
+
 def _cached_fetch(url: str, path: Path, session=None, refresh: bool = False,
-                  expected_md5: str | None = None, extra: dict | None = None) -> tuple[bytes, dict]:
+                  expected_md5: str | None = None, extra: dict | None = None,
+                  transform=None) -> tuple[bytes, dict]:
     """Bytes of ``url`` cached at ``path`` (provenance in ``path.parent/provenance.json``).
 
     A cached file is used unless ``refresh`` or it has no access time in
     provenance.json (:func:`undated_files`; it is then fetched again); if a
     download fails, an existing cached copy is used instead (offline reruns).
+    ``transform`` (bytes -> (bytes, dict)), e.g. :func:`redact_page`, changes a
+    download before it is written; the provenance then gives md5 and size of
+    the download as served (md5_original, bytes_original) and of the cached
+    file (md5, bytes), plus the dict it returns.  md5_original is reported for
+    a cached file only while the file is the copy recorded with it.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not refresh and not undated_files(path.parent, [path.name]):
@@ -144,18 +162,69 @@ def _cached_fetch(url: str, path: Path, session=None, refresh: bool = False,
             data = r.content
             if expected_md5 and md5_bytes(data) != expected_md5:
                 raise ValueError(f"{url}: md5 {md5_bytes(data)} != expected {expected_md5}")
-            part = path.with_name(path.name + ".part")  # no truncated cache files after an interruption
-            part.write_bytes(data)
-            part.replace(path)
+            changed = {}
+            if transform is not None:
+                served = {"md5_original": md5_bytes(data), "bytes_original": len(data)}
+                data, notes = transform(data)
+                changed = {**served, **notes}
+            _write_atomic(path, data)
             meta = {"url": url, "final_url": getattr(r, "url", url) or url, "file": path.name,
-                    "md5": md5_bytes(data), "bytes": len(data), "accessed_utc": _utc_now(), **(extra or {})}
+                    "md5": md5_bytes(data), "bytes": len(data), **changed, "accessed_utc": _utc_now(),
+                    **(extra or {})}
             _record(path.parent, path.name, meta)
             return data, meta
     got = md5_bytes(data)
     if expected_md5 and got != expected_md5:
         raise ValueError(f"cached {path} has md5 {got}, expected {expected_md5}; delete it to re-download")
     meta = load_provenance(path.parent)["files"].get(path.name, {"url": url, "file": path.name})
+    if meta.get("md5") not in (None, got):  # not the copy recorded: what it was served as is unknown
+        meta = {k: v for k, v in meta.items() if k not in ("md5_original", "bytes_original")}
     return data, {**meta, "md5": got, "bytes": len(data)}
+
+
+# -- e-mail addresses in cached pages -------------------------------------------------------------
+REDACTED = "[email removed]"
+# an address ('@' also as %40 or an HTML entity), with the mailto: of a link when there is one; the lookbehind
+# starts a match only at the start of a run of address characters, which keeps the search linear in long runs
+# (base64 data in HTML pages)
+_EMAIL = re.compile(rb"(?<![A-Za-z0-9._%+-])(?:mailto:)?[A-Za-z0-9._%+-]+(?:@|%40|&#0*64;|&#x0*40;)"
+                    rb"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}", re.IGNORECASE)
+
+
+def redact_emails(data: bytes) -> tuple[bytes, int]:
+    """``data`` with every e-mail address, and every mailto: link with its address, replaced by
+    REDACTED ('[email removed]'); returns (bytes, number of replacements).
+
+    Site pages list the site teams' addresses (``<a href="mailto:x@y">x@y</a>`` becomes
+    ``<a href="[email removed]">[email removed]</a>``).  They are third-party personal data that
+    :func:`parse_site_page` does not need, so cached pages never keep them.
+    """
+    return _EMAIL.subn(REDACTED.encode(), data)
+
+
+def redact_page(data: bytes) -> tuple[bytes, dict]:
+    """:func:`redact_emails` as a ``transform`` of :func:`_cached_fetch`."""
+    out, n = redact_emails(data)
+    return out, {"emails_removed": n}
+
+
+def redact_cached(path: str | Path) -> dict:
+    """Remove the e-mail addresses from a page cached before pages were redacted, in place.
+
+    Records the md5 and size before (md5_original, bytes_original) and after
+    (md5, bytes) in provenance.json, keeping URL and access time; a copy
+    without addresses is left as it is.  Returns the file's provenance.
+    """
+    path = Path(path)
+    data = path.read_bytes()
+    out, n = redact_emails(data)
+    meta = dict(load_provenance(path.parent)["files"].get(path.name, {"file": path.name}))
+    if n:
+        _write_atomic(path, out)
+        meta.update(md5_original=md5_bytes(data), bytes_original=len(data), md5=md5_bytes(out),
+                    bytes=len(out), emails_removed=n)
+        _record(path.parent, path.name, meta)
+    return meta
 
 
 # -- amerifluxr BASE variable availability ---------------------------------------------------------
@@ -452,12 +521,20 @@ def parse_site_page(html: str, site: str) -> dict:
 def site_page_info(site: str, cache: str | Path, session=None, refresh: bool = False) -> dict:
     """Parsed site page (:func:`parse_site_page`) plus its URL, access time and md5.
 
-    The page HTML is cached as ``cache/siteinfo_<SITE>.html`` and reused unless
-    ``refresh``.  The page shows the current BASE version, which changes over
-    time; the cached copy is what the paper uses.
+    The page HTML is cached as ``cache/siteinfo_<SITE>.html`` without e-mail
+    addresses (:func:`redact_emails`; a copy cached with them is redacted in
+    place, :func:`redact_cached`) and reused unless ``refresh``.  The page
+    shows the current BASE version, which changes over time; the cached copy
+    is what the paper uses.  page_md5 is the md5 of the page as served
+    (md5_original in provenance.json; md5 there is that of the cached copy).
     """
     url = SITE_PAGE_URL.format(site=site)
-    data, meta = _cached_fetch(url, Path(cache) / SITE_PAGE_FILE.format(site=site), session, refresh)
+    path = Path(cache) / SITE_PAGE_FILE.format(site=site)
+    data, meta = _cached_fetch(url, path, session, refresh, transform=redact_page)
+    if _EMAIL.search(data):  # cached before pages were redacted
+        meta = {**meta, **redact_cached(path)}
+        data = path.read_bytes()
     info = parse_site_page(data.decode("utf-8", errors="replace"), site)
-    info.update(site=site, page_url=url, page_accessed_utc=meta.get("accessed_utc"), page_md5=meta["md5"])
+    info.update(site=site, page_url=url, page_accessed_utc=meta.get("accessed_utc"),
+                page_md5=meta.get("md5_original") or meta["md5"])
     return info

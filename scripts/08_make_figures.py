@@ -9,12 +9,17 @@ Fig. 2  (a) Apparent OpenET bias created by zero-filled observations.
             the period's half-hours with LE in the AmeriFlux BASE files): means
             that count missing data as zero scale with availability.
         (d) OpenET ensemble bias by season as GO26 report it (test set, their
-            Table 4) and for current OpenET against the benchmark's closed ET.
+            Table 4) and for current OpenET against the benchmark's closed ET;
+            markers at the GO26 bars give current OpenET at GO26's towers against
+            their observed ET rebuilt from the BASE files (scripts/10, all zones):
+            as GO26's Table 1, missing data counted as zero (diamonds), and on
+            valid days, gap-filled and closed with the energy-balance ratio (dots).
 
 Inputs: results/digitized_US-UTJ.csv, results/digitized_summary.json (scripts/04),
-config/go26_sites.csv, results/ameriflux_le_availability.csv (scripts/11) and
+config/go26_sites.csv, results/ameriflux_le_availability.csv (scripts/11),
 results/openet_api_go26_sites.csv and openet_api_benchmark_summary.csv (scripts/12;
-OpenET API, collection 2.1).
+OpenET API, collection 2.1) and, optionally, results/go26_reconstructed_openet_bias.csv
+(scripts/10, which needs the AmeriFlux BASE files; without it Fig. 2d has no markers).
 OpenET values carry the attribution the OpenET API Terms of Service require
 (OpenET, https://openetdata.org).
 Outputs: figures/fig1_*.{pdf,png}, figures/fig2_*.{pdf,png}.
@@ -29,6 +34,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.dates as mdates
+import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -52,6 +58,16 @@ CREDIT = "OpenET data: OpenET, https://openetdata.org"
 # marker categories of the GO26 towers in Fig. 2b and c: face colour, legend label
 CATS = {"flagged": (st.ORANGE, "Irrigated, dry climate"), "shared": (st.BLUE, "In Volk et al. benchmark"),
         "other": ("white", "Other GO26 site")}
+# Fig. 2d markers: all-zone season rows (month_set, variant) of the OpenET bias table of scripts/10 (optional)
+RECON_BIAS = "go26_reconstructed_openet_bias.csv"
+RECON_SERIES = {"zero_filled": ("all_months", "zero_filled_table1"), "ebr": ("common_valid_months", "ebr_mdv")}
+# their marker, size (pt^2), face, edge, edge width and legend label (under the title GO26_TOWERS_TITLE); a white
+# ring of RING_PT outside the edge sets them off where they sit on a bar or on the zero line
+GO26_TOWER_MARKERS = {"zero_filled": ("D", 20, "white", st.ORANGE, 1.0, "rebuilt obs. (zero-filled)"),
+                      "ebr": ("o", 20, st.INK, st.INK, 0.0, "valid days, EBR-closed")}
+GO26_TOWERS_TITLE = "GO26 towers, OpenET 2.1 vs"
+RING_PT = 0.8
+SEASON_CODE = {"winter": "DJF", "spring": "MAM", "summer": "JJA", "fall": "SON"}
 
 
 def zero_spans(df: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp, int]]:
@@ -78,7 +94,7 @@ def _save(fig, name: str) -> None:
     st.check_text_size(fig)
     FIG.mkdir(exist_ok=True)
     for ext in ("pdf", "png"):
-        fig.savefig(FIG / f"{name}.{ext}", dpi=600)
+        fig.savefig(FIG / f"{name}.{ext}", dpi=600, metadata=st.PDF_METADATA if ext == "pdf" else None)
     plt.close(fig)
 
 
@@ -137,6 +153,29 @@ def _openet_results() -> tuple[pd.DataFrame, pd.DataFrame, str]:
     bench = pd.read_csv(RES / "openet_api_benchmark_summary.csv")
     a = bench[(bench["model"] == "ensemble") & (bench["stratum_type"] == "all")].iloc[0]
     return t, bench, f"{str(a['first_month'])[:4]}–{str(a['last_month'])[:4]}"
+
+
+def _reconstructed_bias() -> pd.DataFrame | None:
+    """OpenET bias by season at GO26's towers (scripts/10, all zones; mm/d), one column per RECON_SERIES.
+
+    None where results/go26_reconstructed_openet_bias.csv is missing (scripts/10 needs the AmeriFlux BASE
+    files) or holds none of these rows: Fig. 2d is then drawn without the markers.  Withheld values are NaN.
+    """
+    f = RES / RECON_BIAS
+    if not f.exists():
+        print(f"results/{RECON_BIAS} not found (scripts/10): Fig. 2d drawn without the GO26-tower markers")
+        return None
+    b = pd.read_csv(f, comment="#")
+    need = {"koppen_go26", "season", "month_set", "variant", "bias_mm_d"}
+    if not need <= set(b.columns):
+        raise ValueError(f"results/{RECON_BIAS} lacks {sorted(need - set(b.columns))}: rerun scripts/10")
+    bias = {(r.season, r.month_set, r.variant): r.bias_mm_d for r in b[b["koppen_go26"] == "all"].itertuples()}
+    rec = pd.DataFrame({k: [bias.get((SEASON_CODE[s], *mv), np.nan) for s in oc.SEASONS]
+                        for k, mv in RECON_SERIES.items()}, index=oc.SEASONS, dtype=float)
+    if rec.isna().all(axis=None):
+        print(f"results/{RECON_BIAS} has no all-zone season bias: Fig. 2d drawn without the GO26-tower markers")
+        return None
+    return rec
 
 
 def _category(sites: pd.DataFrame) -> pd.Series:
@@ -258,8 +297,10 @@ def _panel_availability(ax, t: pd.DataFrame, cat: pd.Series) -> None:
               borderpad=0.3, borderaxespad=0.3)
 
 
-def _panel_seasons(ax, bench: pd.DataFrame, period: str) -> None:
-    """(d) OpenET bias by season: GO26 Table 4 against current OpenET vs the benchmark's closed ET."""
+def _panel_seasons(ax, bench: pd.DataFrame, period: str, rec: pd.DataFrame | None = None) -> None:
+    """(d) OpenET bias by season: GO26 Table 4 against current OpenET vs the benchmark's closed ET and, at the
+    GO26 bars, current OpenET at GO26's towers against their rebuilt observed ET (``rec``, _reconstructed_bias;
+    GO26_TOWER_MARKERS, without value labels; left out when ``rec`` is None)."""
     e = bench[bench["model"] == "ensemble"].set_index(["stratum_type", "stratum"])
 
     def mbe(kind: str, key: str) -> float:
@@ -267,26 +308,43 @@ def _panel_seasons(ax, bench: pd.DataFrame, period: str) -> None:
 
     x = np.arange(len(oc.SEASONS))
     w = 0.3
-    xg, xb, xk = x - w - 0.02, x, x + w / 2 + 0.17  # GO26 bar, benchmark bar, Koppen-group markers
+    xg, xb, xk = x - w - 0.02, x, x + w / 2 + 0.17  # GO26 bar (and GO26-tower markers), benchmark bar, Koppen groups
     go = np.array([oc.GO26_SEASON_BIAS[s] for s in oc.SEASONS])
     bmv = np.array([mbe("season", s) for s in oc.SEASONS])
     ax.axhline(0, color=st.INK, lw=0.6, zorder=2)
     ax.bar(xg, go, width=w, color=st.ORANGE, zorder=3)
     ax.bar(xb, bmv, width=w, color=st.BLUE, zorder=3)
-    for xi, v in [*zip(xg, go), *zip(xb, bmv)]:
-        if np.isfinite(v):
-            lab = "0.00" if abs(v) < 0.005 else f"{v:+.2f}".replace("-", "−")
-            ax.text(xi, v + (0.04 if v >= 0 else -0.04), lab, ha="center", va="bottom" if v >= 0 else "top",
-                    fontsize=7.5, color=st.INK)
     marks = {"B": "^", "C": "s", "D": "o"}
     lo = np.nanmin(bmv)
     for g, mk in marks.items():
         v = np.array([mbe("season_x_group", f"{s}, {g}") for s in oc.SEASONS])
         lo = min(lo, np.nanmin(v)) if np.isfinite(v).any() else lo
         ax.scatter(xk, v, marker=mk, s=18, facecolor="white", edgecolor=st.BLUE, lw=0.8, zorder=4)
+    ylim = (min(-1.0, np.floor((lo - 0.2) * 10) / 10), 1.7)
+    # GO26 value labels sit beyond the bar end or a marker on the bar, whichever reaches further
+    hi, low = go.copy(), go.copy()
+    hr = []  # legend handles of the GO26-tower markers
+    if rec is not None:
+        # room for their legend below the bars, and above for the raised GO26 labels under the two legends there
+        ylim = (min(ylim[0], -1.35), 1.9)
+        pt = ax.get_position().height * ax.figure.get_size_inches()[1] * 72 / (ylim[1] - ylim[0])  # pt per mm/d
+        for key, (mk, s, fc, ec, lw, lab) in GO26_TOWER_MARKERS.items():
+            v = rec[key].to_numpy(float)
+            if not np.isfinite(v).any():
+                continue
+            ax.scatter(xg, v, marker=mk, s=s, facecolor=fc, edgecolor=ec, lw=lw, zorder=5,
+                       path_effects=[pe.Stroke(linewidth=lw + 2 * RING_PT, foreground="white"), pe.Normal()])
+            half = (np.sqrt(s) * (np.sqrt(0.5) if mk == "D" else 0.5) + lw / 2 + RING_PT) / pt  # half height, mm/d
+            hi, low = np.fmax(hi, v + half), np.fmin(low, v - half)
+            hr.append(Line2D([], [], marker=mk, ls="", mfc=fc, mec=ec, mew=lw, ms=np.sqrt(s), label=lab))
+    for xi, v, end in [*zip(xg, go, np.where(go >= 0, hi, low)), *zip(xb, bmv, bmv)]:
+        if np.isfinite(v):
+            lab = "0.00" if abs(v) < 0.005 else f"{v:+.2f}".replace("-", "−")
+            ax.text(xi, end + (0.04 if v >= 0 else -0.04), lab, ha="center", va="bottom" if v >= 0 else "top",
+                    fontsize=7.5, color=st.INK)
     ax.set_xticks(x - 0.08, ["Winter\n(DJF)", "Spring\n(MAM)", "Summer\n(JJA)", "Fall\n(SON)"])
     ax.tick_params(axis="x", length=0)
-    ax.set_ylim(min(-1.0, np.floor((lo - 0.2) * 10) / 10), 1.7)
+    ax.set_ylim(*ylim)
     ax.set_xlim(-0.65, len(x) - 0.35)
     ax.set_ylabel("OpenET ensemble bias (mm d$^{-1}$)")
     ax.set_title("Seasonal OpenET bias: GO26 vs benchmark", loc="left", pad=7, color=st.INK)
@@ -295,6 +353,10 @@ def _panel_seasons(ax, bench: pd.DataFrame, period: str) -> None:
     leg = ax.legend(handles=hb, loc="upper left", handlelength=1.4, handletextpad=0.5, labelspacing=0.5,
                     borderpad=0.3, borderaxespad=0.3)
     ax.add_artist(leg)
+    if hr:
+        ax.add_artist(ax.legend(handles=hr, loc="lower left", ncol=len(hr), title=GO26_TOWERS_TITLE,
+                                alignment="left", handlelength=0.8, handletextpad=0.4, columnspacing=1.2,
+                                borderpad=0.3, borderaxespad=0.3))
     hk = [Line2D([], [], marker=mk, ls="", mfc="white", mec=st.BLUE, mew=0.8, ms=4.5, label=lab)
           for mk, lab in zip(marks.values(), ("B (dry)", "C (temperate)", "D (continental)"))]
     ax.legend(handles=hk, loc="upper right", title="Benchmark by\nKöppen group", alignment="left",
@@ -304,6 +366,7 @@ def _panel_seasons(ax, bench: pd.DataFrame, period: str) -> None:
 def fig2() -> None:
     st.nature(8)
     t, bench, period = _openet_results()
+    rec = _reconstructed_bias()
     summ = json.load(open(RES / "digitized_summary.json"))["US-UTJ"]
     sites = pd.read_csv(ROOT / "config" / "go26_sites.csv")
     cat = _category(sites)
@@ -317,7 +380,7 @@ def fig2() -> None:
     _panel_zero_fill(ax, summ, up)
     _panel_et_vs_p(bx, sites, cat, t, up)
     _panel_availability(cx, t, cat)
-    _panel_seasons(dx, bench, period)
+    _panel_seasons(dx, bench, period, rec)
     fig.text((right + wr) / W, 0.03 / fig.get_size_inches()[1], CREDIT, ha="right", va="bottom", fontsize=7,
              color=st.INK2)
     # panel labels level with the titles
@@ -328,7 +391,12 @@ def fig2() -> None:
     _save(fig, "fig2_zero_fill_bias_and_site_ET")
 
 
-if __name__ == "__main__":
+def main() -> None:
+    st.rerun_with_fixed_hash_seed(__name__)  # byte-reproducible PDFs (etcomment.style)
     fig1()
     fig2()
     print("wrote figures/fig1_*, figures/fig2_*")
+
+
+if __name__ == "__main__":
+    main()

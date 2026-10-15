@@ -1,5 +1,7 @@
 import importlib.util
+import itertools
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -267,10 +269,13 @@ def _go26_inputs(tmp_path: Path, with_availability: bool):
 def test_script_part_a_skips_availability_outputs_when_files_are_missing(tmp_path, capsys, with_availability):
     s12 = _script()
     sites, monthly, av, ay = _go26_inputs(tmp_path, with_availability)
-    t, summary = s12.part_a(sites, monthly, av, ay, tmp_path, prov={"test": True})
+    t, summary = s12.part_a(sites, monthly, av, ay, tmp_path, prov={"test": True}, local=tmp_path / "derived")
     out = capsys.readouterr().out
     written = json.loads((tmp_path / "openet_api_go26_summary.json").read_text())
-    assert (tmp_path / "openet_api_go26_sites.csv").exists()
+    res = pd.read_csv(tmp_path / "openet_api_go26_sites.csv")
+    assert not set(s12.SITE_LOCAL) & set(res.columns) and "oe_mm_d" in res
+    assert set(s12.SITE_LOCAL[:3]) <= set(pd.read_csv(tmp_path / "derived" / s12.SITES_FULL).columns)
+    assert all(set(g) <= set(s12.SUMMARY_KEYS) for g in written["go26_towers"].values())
     assert "https://openetdata.org" in written["attribution"]
     if with_availability:
         assert written["availability"]["available"] is True
@@ -282,7 +287,8 @@ def test_script_part_a_skips_availability_outputs_when_files_are_missing(tmp_pat
         assert t["p_zf_mm_d"].isna().all() and t["le_avail_period"].isna().all()
         assert written["go26_towers"]["all"]["ratio_vs_availability"]["pearson_r"] is None
     flagged = {r["site"] for r in written["irrigated_dry_climate_sites"]}
-    assert flagged == {"US-UTJ"}
+    assert flagged == {"US-UTJ"} and not any("p_zf_mm_d" in r for r in written["irrigated_dry_climate_sites"])
+    assert written["openet_identifiability"]["sets_found"] == {"go26_period_means": 0}
 
 
 def test_daily_sensitivity_in_site_table_and_summary():
@@ -366,32 +372,45 @@ def _digitized(tmp_path: Path) -> tuple[pd.DataFrame, Path]:
     return pd.concat(rows, ignore_index=True), digi
 
 
-def test_script_part_b_reports_scale_and_monthly_differences(tmp_path, capsys):
+def test_script_part_b_reports_scale_and_keeps_monthly_means_local(tmp_path, capsys):
     s12 = _script()
     daily, digi = _digitized(tmp_path)
-    df, mo, ident = s12.part_b(daily, digi, tmp_path)
+    out, local = tmp_path / "results", tmp_path / "derived"
+    out.mkdir()
+    (out / "openet_api_go26_figure_check_monthly.csv").write_text("site,month\n")  # output of earlier versions
+    df, mo, ident = s12.part_b(daily, digi, out, local)
     assert "monthly means" in capsys.readouterr().out
     assert set(ident) == {"US-UiC", "US-UTJ"} and max(ident.values()) < 1 - oc.IDENT_TOL
-    f = pd.read_csv(tmp_path / "openet_api_go26_figure_check.csv").set_index(["site", "days"])
-    assert np.allclose(f.xs("all plotted days", level="days")["scale_go26_over_api"], [1.0, 0.8])
+    assert sorted(p.name for p in out.iterdir()) == ["openet_api_go26_figure_check.csv"]
+    f = pd.read_csv(out / "openet_api_go26_figure_check.csv").set_index("site")
+    assert (f["days"] == s12.FIGURE_DAYS).all() and len(f) == 2  # the other day set would give a sum over 1 month
+    assert np.allclose(f["scale_go26_over_api"], [1.0, 0.8])
     assert (f["rmse_scaled_mm_d"] < 1e-4).all() and (f["pearson_r"] > 0.999).all()
-    m = pd.read_csv(tmp_path / "openet_api_go26_figure_check_monthly.csv")
+    assert len(pd.read_csv(local / s12.FIGURE_CHECK_ALL)) == 4
+    m = pd.read_csv(local / s12.FIGURE_CHECK_MONTHLY)
     assert list(m.columns) == ["site", "go26_figure", "month", "n", "mean_go26_openet_mm_d",
                                "mean_api_openet_mm_d", "diff_go26_minus_api_mm_d"]
     assert len(m) == 24 and m.groupby("site")["n"].sum().tolist() == [366 - 5, 366 - 5]
     utj = m[m["site"] == "US-UTJ"]
     assert np.allclose(utj["diff_go26_minus_api_mm_d"], -0.2 * utj["mean_api_openet_mm_d"], atol=1e-4)
     assert np.allclose(m.loc[m["site"] == "US-UiC", "diff_go26_minus_api_mm_d"], 0.0, atol=1e-4)
-    # without the digitized series both files are written empty
-    df2, mo2, _ = s12.part_b(daily, tmp_path / "none", tmp_path)
+    # results get nothing by month (not even bounds of the monthly differences): the table holds whole-figure rows
+    assert list(df.columns) == list(f.reset_index().columns) and "month" not in df
+    assert df[["first", "last"]].values.tolist() == [["2020-01-01", "2020-12-31"], ["2024-01-01", "2024-12-31"]]
+    # without the digitized series the results file is written empty
+    df2, mo2, _ = s12.part_b(daily, tmp_path / "none", out, local)
     assert df2.empty and mo2.empty
 
 
-def _part_c_inputs():
-    """Standardized daily benchmark frames, station metadata and API monthly totals (all models)."""
+def _part_c_inputs(years: int = 6):
+    """Standardized daily benchmark frames, station metadata and API monthly totals (all models).
+
+    A and D have ``years`` years of record: with fewer than six, a season of group B or D has fewer than six
+    months of one length (e.g. two Aprils), which the MBE per day would give next to the MBE in mm/month.
+    """
     frames, meta, api = {}, [], []
-    for site, k, start, months in (("A", "BSk", "2016-01-01", 24), ("B", "BSk", "2016-01-01", 2),
-                                   ("C", "BSk", "2016-05-01", 3), ("D", "Dfa", "2016-01-01", 24),
+    for site, k, start, months in (("A", "BSk", "2016-01-01", 12 * years), ("B", "BSk", "2016-01-01", 2),
+                                   ("C", "BSk", "2016-05-01", 3), ("D", "Dfa", "2016-01-01", 12 * years),
                                    ("E", "Dfa", "2017-01-01", 10)):
         idx = pd.date_range(start, pd.Timestamp(start) + pd.DateOffset(months=months) - pd.Timedelta(days=1))
         et = 1.0 + 3.0 * np.sin(np.pi * (idx.dayofyear.to_numpy() - 1) / 366) ** 2
@@ -418,11 +437,11 @@ def test_script_part_c_keeps_station_months_out_of_results(tmp_path, capsys):
     pairs, summ, no_openet, ident = s12.part_c(frames, meta, api, go, zones, out, local)
     printed = capsys.readouterr().out
     assert no_openet == ["D 2016-06"] and "D 2016-06" in printed
-    assert "62 station-months with an OpenET ensemble value at 5 cropland stations" in printed
+    assert "158 station-months with an OpenET ensemble value at 5 cropland stations" in printed
     assert sorted(p.name for p in out.iterdir()) == ["openet_api_benchmark_summary.csv"]
     assert set(ident) == set(oc.MODELS) and all(not v["stations_withheld_by_check"] for v in ident.values())
     sm = pd.read_csv(local / "benchmark_station_months.csv")
-    assert len(sm) == 62 and sm["ensemble_minus_ec_mm"].notna().all()
+    assert len(sm) == 158 and sm["ensemble_minus_ec_mm"].notna().all()
     assert np.allclose(sm["ensemble_minus_ec_mm"], -0.1 * sm["ec_closed_et_mm"], atol=2e-3)
     s = pd.read_csv(out / "openet_api_benchmark_summary.csv")
     assert not [c for c in s.columns if "station_mean" in c]
@@ -433,8 +452,161 @@ def test_script_part_c_keeps_station_months_out_of_results(tmp_path, capsys):
     assert site.loc[site["openet_withheld"], "n_months"].notna().all()
     assert not s.loc[s["stratum_type"] != "site", "openet_withheld"].any()
     e = s[(s["model"] == "ensemble") & (s["stratum_type"] == "all")].iloc[0]
-    assert (e["first_month"], e["last_month"], e["n_months"]) == ("2016-01", "2017-12", 62)
+    assert (e["first_month"], e["last_month"], e["n_months"]) == ("2016-01", "2021-12", 158)
     assert np.isclose(e["mbe_pct"], -10.0)
+    # MBE per day: the ensemble's pooled strata and each model's row of all station-months only
+    pub = s[~s["openet_withheld"]]
+    per_day = pub["mbe_mm_d"].notna()
+    expect = (pub["stratum_type"] == "all") | ((pub["model"] == "ensemble") & (pub["stratum_type"] != "site"))
+    assert per_day.equals(expect) and pub["mbe_mm_month"].notna().all()
+    assert all(v["sets_found"] == 0 for v in ident.values())
+    # two years of record: spring of group B holds two Aprils among five 31-day months, so its MBEs in mm/month
+    # and per day give the sum of the two Aprils; not written
+    frames, meta, api, go, zones = _part_c_inputs(years=2)
+    with pytest.raises(RuntimeError, match="fewer than 6 station-months"):
+        s12.part_c(frames, meta, api, go, zones, tmp_path / "results2", tmp_path / "derived2")
+
+
+def test_small_supports_finds_the_sums_that_published_rows_give():
+    months = pd.date_range("2024-01-01", "2025-02-01", freq="MS")
+    keys = [("X", m) for m in months]
+    days = np.asarray(months.days_in_month, float)
+    a = np.where(months.year == 2024, 0.6, 0.3)  # LE availability by year
+    mean = pd.Series(1.0 / days.sum(), keys)
+    zf = pd.Series(a / days.sum(), keys)
+    # a period mean and a zero-fill prediction that weights the years differently give the 2025 sum
+    found = oc.small_supports(pd.DataFrame([mean, zf]))
+    assert found == [(("X", months[-2]), ("X", months[-1]))]
+    assert oc.small_supports(pd.DataFrame([mean])) == []
+    # sums and sums per day of one stratum give the months of one length when they are few (three 30-day and
+    # four 31-day months here)
+    m = pd.date_range("2016-03-01", periods=7, freq="MS")  # Mar-Sep: 30-day April, June, September
+    k = [("S", x) for x in m]
+    rows = pd.DataFrame([pd.Series(1.0, k), pd.Series(1.0 / np.asarray(m.days_in_month, float), k)])
+    assert oc.small_supports(rows) == [tuple(("S", x) for x in m if x.days_in_month == 30),
+                                       tuple(("S", x) for x in m if x.days_in_month == 31)]
+    # nested sets: their difference; disjoint sets of six months each: nothing
+    k = [("Y", x) for x in pd.date_range("2016-01-01", periods=12, freq="MS")]
+    big, sub = pd.Series(1.0, k), pd.Series(1.0, k[:10])
+    assert oc.small_supports(pd.DataFrame([big, sub])) == [tuple(k[10:])]
+    assert oc.small_supports(pd.DataFrame([pd.Series(1.0, k[:6]), pd.Series(1.0, k[6:])])) == []
+    # daily values grouped by month: a sum over the days of two months
+    d = pd.date_range("2024-01-01", "2024-12-31", freq="D")
+    rows = pd.DataFrame([pd.Series(1.0, d), pd.Series(1.0, d[d.month > 2])])
+    assert oc.small_supports(rows, group=lambda x: x.to_period("M")) == [(pd.Period("2024-01"), pd.Period("2024-02"))]
+
+
+def test_small_supports_agrees_with_brute_force():
+    rng = np.random.default_rng(3)
+    for trial in range(25):
+        n = 9
+        cols = list(range(n))
+        rows = pd.DataFrame((rng.random((rng.integers(1, 6), n)) < 0.5).astype(float)
+                            * rng.choice([1.0, 0.5, 2.0], size=n), columns=cols)
+        found = oc.small_supports(rows, min_groups=4)
+        a = rows.to_numpy()
+        r = np.linalg.matrix_rank(a)
+        brute = set()
+        for k in range(1, 4):
+            for u in itertools.combinations(cols, k):
+                rest = [j for j in cols if j not in u]
+                if np.linalg.matrix_rank(a[:, rest]) < r and not any(set(b) <= set(u) for b in brute):
+                    brute.add(u)
+        live = [c for c in cols if a[:, c].any()]  # all-zero columns carry nothing
+        brute = {u for u in brute if set(u) <= set(live)}
+        assert set(found) == brute, (trial, found, brute)
+
+
+def test_period_rows_with_per_tower_p_zf_would_give_the_partial_year(tmp_path):
+    s12 = _script()
+    sites = pd.DataFrame([{"site": "US-UTJ", "koppen_go26": "BSk", "period_start": "2024-01", "period_end": "2025-02",
+                           "mean_obs_et_mm_d": 0.6, "map_mm": 200.0, "in_volk_benchmark": False}])
+    monthly = _monthly("US-UTJ")
+    ay = pd.DataFrame({"site": "US-UTJ", "year": [2024, 2025], "le_avail": [0.38, 0.13],
+                       "days_in_year": [366, 365], "days_in_period": [366, 59]})
+    t = oc.go26_site_table(sites, monthly, None, ay)
+    # the period mean alone: nothing; with P_zf of the tower (a statistic that is P_zf itself): Jan + Feb 2025
+    rows = s12.period_month_rows(t, monthly, ay)
+    assert oc.small_supports(rows["et_ensemble"]) == []
+    one = {("p_zf",): pd.Series({("US-UTJ", "p_zf_mm_d"): 1.0})}
+    rows = s12.period_month_rows(t, monthly, ay, one)
+    jan_feb = (("US-UTJ", pd.Timestamp("2025-01-01")), ("US-UTJ", pd.Timestamp("2025-02-01")))
+    assert oc.small_supports(rows["et_ensemble"]) == [jan_feb]
+    with pytest.raises(RuntimeError, match="fewer than 6 site-months"):
+        s12.check_rows(rows["et_ensemble"], "(a)")
+    # eto and precipitation of towers in one gridMET cell (identical series) share their unknowns
+    two = pd.concat([monthly, monthly.assign(site="US-UTX")], ignore_index=True)
+    two["et_ensemble"] *= np.where(two["site"] == "US-UTX", 1.1, 1.0)
+    sites2 = pd.concat([sites, sites.assign(site="US-UTX", period_end="2024-12")], ignore_index=True)
+    t2 = oc.go26_site_table(sites2, two, None, None)
+    r2 = s12.period_month_rows(t2, two, None)
+    assert {k[0] for k in r2["eto"].columns} == {"US-UTJ"} and {k[0] for k in r2["et_ensemble"].columns} == {
+        "US-UTJ", "US-UTX"}
+    assert oc.small_supports(r2["eto"]) == [jan_feb]  # the two period means differ by Jan + Feb 2025
+
+
+def test_near_exact_sums_are_found_at_the_loose_tolerance():
+    # P_zf and its whole-year variant weight full years alike up to the rounding of the availability (4-decimal
+    # fraction against 4-decimal days), and a partial final year (Jan-Apr 2025) differently: their difference is
+    # the 4-month sum up to ~1e-4 of the rest, which the exact rank test does not see
+    s12 = _script()
+    rng = np.random.default_rng(0)
+    months = pd.date_range("2020-01-01", "2025-04-01", freq="MS")
+    keys = [("US-ARM", m) for m in months]
+    le = pd.Series([0.8967, 0.8972, 0.8948, 0.8332, 0.8925, 0.2816], index=range(2020, 2026))
+    diy = pd.Series([366, 365, 365, 365, 366, 365], index=le.index)
+    dip = diy.where(le.index < 2025, 120)
+    avail = (le * diy + rng.uniform(-0.02, 0.02, le.size)).round(4)
+    by = pd.DataFrame({"le_avail": le, "days_in_year": diy, "days_in_period": dip, "days_available": avail})
+    w = np.asarray(months.days_in_month, float).sum()
+    rows = pd.DataFrame([pd.Series(1.0 / w, keys),
+                         pd.Series(oc.period_availability(by).reindex(months.year).to_numpy() / w, keys),
+                         pd.Series(le.reindex(months.year).to_numpy() / w, keys)])
+    assert oc.small_supports(rows) == []
+    assert s12.small_sums(rows) == [tuple(k for k in keys if k[1].year == 2025)]
+
+
+def test_summary_gradients_match_the_statistics():
+    sites = pd.DataFrame({"site": [f"S{i}" for i in range(6)], "t1_mm_d": [1.0, 1.2, 0.7, 1.5, 0.9, 1.1],
+                          "oe_mm_d": [2.0, 2.1, 1.8, 2.4, 2.2, 1.9],
+                          "le_avail_period": [0.5, 0.6, 0.4, 0.7, 0.45, 0.55],
+                          "in_benchmark": [True, False, False, True, False, False]})
+    sites["ratio_t1_oe"] = sites["t1_mm_d"] / sites["oe_mm_d"]
+    sites["p_zf_mm_d"] = sites["oe_mm_d"] * sites["le_avail_period"]
+    sites["p_zf_uniform_mm_d"] = sites["p_zf_mm_d"]
+    g = oc.summary_gradients(sites, ["oe_mm_d", "p_zf_mm_d"])
+    assert np.allclose(g[("all", "mean_oe_mm_d")].to_numpy(), 1 / 6)
+    d = g[("all", "t1_vs_p_zf", "mean_diff_t1_minus")]
+    assert set(d.index) == {(s, "p_zf_mm_d") for s in sites["site"]} and np.allclose(d.to_numpy(), -1 / 6)
+    assert set(g[("not_in_benchmark", "t1_vs_oe", "rmse_diff")].index) == {(s, "oe_mm_d") for s in
+                                                                        ["S1", "S2", "S4", "S5"]}
+    assert ("all", "ratio_vs_availability", "spearman_r") not in g  # a rank statistic has no gradient
+    kept = oc.summary_gradients(sites, ["p_zf_mm_d"], keep={("all", "t1_vs_p_zf", "pearson_r")})
+    assert list(kept) == [("all", "t1_vs_p_zf", "pearson_r")]
+
+
+def test_script_part_d_withholds_seasons_of_few_months(tmp_path):
+    s12 = _script()
+    frames, rows = {}, []
+    for i, s in enumerate(s12.SHARED):
+        idx = pd.date_range("2016-01-01", "2018-12-31", freq="D")
+        if s == "US-xSL":  # summer only in July 2017, June 2018 and July 2018
+            idx = idx[(idx.month != 6) & (idx.month != 7) & (idx.month != 8)
+                      | ((idx.year == 2017) & (idx.month == 7)) | ((idx.year == 2018) & idx.month.isin([6, 7]))]
+        et = 1.0 + 3.0 * np.sin(np.pi * (idx.dayofyear.to_numpy() - 1) / 366) ** 2 + 0.1 * i
+        frames[s] = pd.DataFrame({"et_corr": et, "et": 0.8 * et, "valid_measured": True}, index=idx)
+        rows.append(pd.DataFrame({"site": s, "date": idx, "et_ensemble": 0.9 * et + 0.05 * np.cos(idx.dayofyear)}))
+    daily = pd.concat(rows, ignore_index=True)
+    go = pd.DataFrame({"site": s12.SHARED, "koppen_go26": "Dfa"})
+    zones = pd.DataFrame({"zone": ["Dfa"], "openet_bias": [0.5]}).set_index("zone")
+    d, ident = s12.part_d(frames, daily, go, zones, tmp_path / "none.csv", tmp_path)
+    r = pd.read_csv(tmp_path / "openet_api_shared_daily.csv")
+    w = r[r["openet_withheld"]]
+    assert set(zip(w["site"], w["season"])) == ({("US-xSL", x) for x in oc.SEASONS}
+                                                | {("All 7 towers", x) for x in oc.SEASONS})
+    assert w[s12.SHARED_OPENET].isna().all().all() and w["n_days"].notna().all()
+    assert r.loc[~r["openet_withheld"], "mean_openet_mm_d"].notna().all()
+    assert set(ident) == set(s12.SHARED) and max(ident.values()) < 1 - oc.IDENT_TOL
 
 
 # ----------------------------------------------------------------------------- identifiability of OpenET values
@@ -522,7 +694,9 @@ def _benchmark_inputs(spec, seed: int = 1):
 
 def test_script_part_c_withholds_until_the_published_summary_determines_no_month(tmp_path, capsys):
     s12 = _script()
-    frames, meta, api = _benchmark_inputs(OF_LIKE + [("OF6", "Cfa", "2018-07-01", 1)])
+    # six years at B1 and BIG: every season of groups B and C then holds six months of each length or none
+    spec = [(s, k, start, 72 if s in ("B1", "BIG") else n) for s, k, start, n in OF_LIKE]
+    frames, meta, api = _benchmark_inputs(spec + [("OF6", "Cfa", "2018-07-01", 1)])
     go = pd.DataFrame({"site": ["BIG"], "koppen_go26": ["Cfa"]})
     zones = pd.DataFrame({"zone": ["Overall (all sites)", "Cfa"], "openet_bias": [0.6, 0.5],
                           "source": ["GO26 Table 3"] * 2}).set_index("zone")
@@ -542,20 +716,50 @@ def test_script_part_c_withholds_until_the_published_summary_determines_no_month
         assert len(idf) == len(pairs) and idf["with_rmse"].max() < 1 - 1e-6
 
 
-def test_script_part_b_refuses_statistics_that_determine_a_daily_value(tmp_path):
+def test_script_part_b_refuses_statistics_over_too_few_months(tmp_path):
     s12 = _script()
     daily, digi = _digitized(tmp_path)
     g = pd.read_csv(digi / "digitized_US-UTJ.csv", parse_dates=["date"])
-    g["openet"] = 0.8 * daily.loc[daily["site"] == "US-UTJ", "et_ensemble"].to_numpy()
-    g.loc[150, "openet"] = np.nan                         # one day of 2024 without GO26's line
+    g.loc[~g["date"].between("2024-05-01", "2024-07-31"), "openet"] = np.nan  # GO26's line in three months only
     g.to_csv(digi / "digitized_US-UTJ.csv", index=False)
-    t = pd.DataFrame({"site": ["US-UTJ"], "period_start": ["2024-01"], "period_end": ["2024-12"],
-                      "oe_daily_mm_d": [2.0]})
-    s12.part_b(daily, digi, tmp_path)                     # the figure check alone determines no day
-    (tmp_path / "openet_api_go26_figure_check.csv").unlink()
-    with pytest.raises(RuntimeError, match="2024-05-30"):  # the year sum of (a) minus the monthly sums would
-        s12.part_b(daily, digi, tmp_path, t)
+    with pytest.raises(RuntimeError, match="fewer than 6 months"):  # the mean over all plotted days: a 3-month sum
+        s12.part_b(daily, digi, tmp_path)
     assert not (tmp_path / "openet_api_go26_figure_check.csv").exists()
+
+
+def test_script_main_publishes_the_figure_check_without_monthly_values(tmp_path, monkeypatch, capsys):
+    # main() without the benchmark ((c)-(e) skipped): the summary JSON carries the figure check over all plotted
+    # days and nothing by month (bounds of the monthly differences placed single months within ~0.05 mm/d)
+    s12 = _script()
+    sites, monthly, av, ay = _go26_inputs(tmp_path, with_availability=True)
+    daily, digi = _digitized(tmp_path)
+    root, api, out, local = tmp_path / "repo", tmp_path / "api", tmp_path / "results", tmp_path / "derived"
+    (root / "config").mkdir(parents=True)
+    api.mkdir()
+    (tmp_path / "no_benchmark").mkdir()
+    sites.to_csv(root / "config" / "go26_sites.csv", index=False)
+    pd.DataFrame({"zone": ["BSk"], "openet_bias": [1.0]}).to_csv(root / "config" / "go26_table3.csv", index=False)
+    monthly.to_csv(api / "openet_monthly.csv", index=False)
+    daily.to_csv(api / "openet_daily.csv", index=False)
+    monkeypatch.setattr(s12, "ROOT", root)
+    monkeypatch.setattr(sys, "argv", ["12_openet_api_analysis.py", "--api", str(api), "--flux",
+                                      str(tmp_path / "no_benchmark"), "--avail", str(av), "--avail-by-year", str(ay),
+                                      "--digitized", str(digi), "--results", str(out), "--derived", str(local)])
+    s12.main()
+    assert "skipping (c)-(e)" in capsys.readouterr().out
+    assert sorted(p.name for p in out.iterdir()) == ["openet_api_go26_figure_check.csv", "openet_api_go26_sites.csv",
+                                                      "openet_api_go26_summary.json"]
+    j = json.loads((out / "openet_api_go26_summary.json").read_text())
+    assert list(j) == ["attribution", "provenance", "definitions", "availability", "go26_towers",
+                       "irrigated_dry_climate_sites", "openet_identifiability", "go26_figure_check"]
+    assert not [k for k in j["definitions"] if "figure_check" in k]
+    assert "go26_figure_check_monthly" not in json.dumps(j)
+    f = pd.read_csv(out / "openet_api_go26_figure_check.csv")
+    assert [r["site"] for r in j["go26_figure_check"]] == list(s12.FIGURE_SITES) == f["site"].tolist()
+    assert {r["days"] for r in j["go26_figure_check"]} == {s12.FIGURE_DAYS}
+    assert np.allclose([r["scale_go26_over_api"] for r in j["go26_figure_check"]], [1.0, 0.8])
+    assert j["openet_identifiability"]["sets_found"] == {"go26_period_means": 0, "daily": 0}
+    assert len(pd.read_csv(local / s12.FIGURE_CHECK_MONTHLY)) == 24  # the monthly means stay local
 
 
 def test_script_part_e_keeps_api_values_out_of_results(tmp_path, monkeypatch):

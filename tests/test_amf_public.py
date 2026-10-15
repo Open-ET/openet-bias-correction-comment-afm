@@ -271,6 +271,73 @@ def test_fetch_json_and_site_page_are_cached_with_access_time(tmp_path):
         assert amf.site_page_info("US-XXX", tmp_path, session=_Offline())["page_accessed_utc"] is None
 
 
+# a site page with the site team's addresses, as AmeriFlux serves them (reserved example domains)
+TEAM = ('<table><tr class="team"><td>PI: </td><td>Jane Doe <a href="mailto:jane.doe@example.org">'
+        'jane.doe@example.org</a> - Example University</td></tr><tr class="team"><td>DataManager: </td><td>John Roe '
+        '<a href="mailto:j_roe+flux@mail.example.com?subject=US-XXX">j_roe+flux@mail.example.com</a></td></tr>'
+        '<tr><td>Contact: x%40example.net, y&#64;example.org</td></tr></table>')
+PAGE_TEAM = PAGE.replace("<table>", TEAM + "<table>", 1)
+
+
+def test_redact_emails_removes_addresses_and_mailto_links_only():
+    out, n = amf.redact_emails(PAGE_TEAM.encode())
+    text = out.decode()
+    assert n == 6 and "example.org" not in text and "example.com" not in text and "example.net" not in text
+    red_team = ('<table><tr class="team"><td>PI: </td><td>Jane Doe <a href="[email removed]">[email removed]</a>'
+                ' - Example University</td></tr><tr class="team"><td>DataManager: </td><td>John Roe '
+                '<a href="[email removed]?subject=US-XXX">[email removed]</a></td></tr>'
+                '<tr><td>Contact: [email removed], [email removed]</td></tr></table>')
+    assert text == PAGE_TEAM.replace(TEAM, red_team)  # nothing else changes
+    # everything scripts/11 reads from the page is unchanged
+    assert amf.parse_site_page(text, "US-XXX") == amf.parse_site_page(PAGE_TEAM, "US-XXX") == \
+        amf.parse_site_page(PAGE, "US-XXX")
+    assert amf.redact_emails(out) == (out, 0) and amf.redact_emails(PAGE.encode()) == (PAGE.encode(), 0)
+    # DOIs, URLs and @ outside addresses stay; long base64-like runs are searched in linear time
+    keep = b"https://doi.org/10.17190/AMF/1234567 @media screen user@ x@y " + b"QUJD" * 100_000
+    assert amf.redact_emails(keep) == (keep, 0)
+
+
+def test_site_page_is_redacted_before_it_is_cached(tmp_path):
+    s = _Session({"siteinfo/US-XXX": PAGE_TEAM.encode()})
+    info = amf.site_page_info("US-XXX", tmp_path, session=s)
+    cached = (tmp_path / "siteinfo_US-XXX.html").read_bytes()
+    served = hashlib.md5(PAGE_TEAM.encode()).hexdigest()
+    assert b"example.org" not in cached and cached == amf.redact_emails(PAGE_TEAM.encode())[0]
+    prov = amf.load_provenance(tmp_path)["files"]["siteinfo_US-XXX.html"]
+    assert (prov["md5_original"], prov["bytes_original"], prov["emails_removed"]) == (
+        served, len(PAGE_TEAM.encode()), 6)
+    assert (prov["md5"], prov["bytes"]) == (hashlib.md5(cached).hexdigest(), len(cached)) and prov["accessed_utc"]
+    # page_md5 is the md5 of the page as served, also when read back from the cache offline
+    assert info["page_md5"] == served and info["base_version"] == "4-5"
+    again = amf.site_page_info("US-XXX", tmp_path, session=_NoNetwork())
+    assert {k: again[k] for k in info} == info
+    # a cached copy changed afterwards is no longer the one md5_original describes
+    (tmp_path / "siteinfo_US-XXX.html").write_bytes(cached + b"\n")
+    assert amf.site_page_info("US-XXX", tmp_path, session=_NoNetwork())["page_md5"] == \
+        hashlib.md5(cached + b"\n").hexdigest()
+
+
+def test_page_cached_with_addresses_is_redacted_in_place(tmp_path):
+    """A cache written before pages were redacted: the next read removes the addresses and keeps the dating."""
+    page = tmp_path / "siteinfo_US-XXX.html"
+    page.write_bytes(PAGE_TEAM.encode())
+    served = hashlib.md5(PAGE_TEAM.encode()).hexdigest()
+    old = {"url": amf.SITE_PAGE_URL.format(site="US-XXX"), "file": page.name, "md5": served,
+           "bytes": len(PAGE_TEAM.encode()), "accessed_utc": "2026-10-15T04:27:22+00:00"}
+    (tmp_path / "provenance.json").write_text(json.dumps({"files": {page.name: old}}))
+    info = amf.site_page_info("US-XXX", tmp_path, session=_NoNetwork())
+    assert info["page_md5"] == served and info["page_accessed_utc"] == old["accessed_utc"]
+    red = page.read_bytes()
+    assert red == amf.redact_emails(PAGE_TEAM.encode())[0]
+    prov = amf.load_provenance(tmp_path)["files"][page.name]
+    assert prov == {**old, "md5": hashlib.md5(red).hexdigest(), "bytes": len(red), "md5_original": served,
+                    "bytes_original": len(PAGE_TEAM.encode()), "emails_removed": 6}
+    snapshot = (red, (tmp_path / "provenance.json").read_text())
+    assert amf.site_page_info("US-XXX", tmp_path, session=_NoNetwork()) == info  # idempotent
+    assert (page.read_bytes(), (tmp_path / "provenance.json").read_text()) == snapshot
+    assert amf.undated_files(tmp_path, [page.name]) == []
+
+
 def test_script_builds_site_table_from_caches(tmp_path, monkeypatch, capsys, s11):
     monkeypatch.setattr(amf, "PINNED_SHA", SHA)
     monkeypatch.setattr(amf, "PINNED_MD5", hashlib.md5(CSV).hexdigest())

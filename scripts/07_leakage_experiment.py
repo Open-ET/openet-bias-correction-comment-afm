@@ -47,7 +47,8 @@ Outputs (results/):
   leakage_experiment_met_unfilled.csv, leakage_experiment_met_unfilled_summary.csv
                                    the first two tables for met_unfilled
   leakage_experiment_versions.json versions, seeds, model settings, input md5s, clusters,
-                                   meteorology gaps and how each variant handles them
+                                   meteorology gaps and how each variant handles them (no run
+                                   time, so that a rerun reproduces it; the time is printed)
 
 Usage:
   python scripts/07_leakage_experiment.py --flux data/raw/flux_ET_dataset \
@@ -225,9 +226,10 @@ def provenance(base: pd.DataFrame, stations: pd.DataFrame, root: Path, openet: P
     model = {k: str(v) if isinstance(v, float) and np.isnan(v) else v  # missing=nan
              for k, v in lk.default_model(0).get_params().items() if v is not None}
     model["random_state"] = "seed"
+    # no run time: the file depends only on the inputs, settings and versions, so a rerun reproduces it
+    # byte for byte (main() prints the time instead)
     return {
         "script": "scripts/07_leakage_experiment.py",
-        "run_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "python": platform.python_version(),
         "platform": platform.platform(),
         "packages": {p: metadata.version(p) for p in PACKAGES},
@@ -283,6 +285,8 @@ def main() -> None:
     ap.add_argument("--cluster-km", type=float, default=CLUSTER_KM,
                     help="stations linked by steps of at most this distance are held out together")
     args = ap.parse_args()
+    print(f"run started {datetime.now(timezone.utc).isoformat(timespec='seconds')} (UTC; not written to "
+          f"leakage_experiment_versions.json, which a rerun reproduces byte for byte)", flush=True)
     out_dir = ROOT / "results"
     out_dir.mkdir(parents=True, exist_ok=True)
     root, openet = bm.find_root(Path(args.flux)), Path(args.openet)

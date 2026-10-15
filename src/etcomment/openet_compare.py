@@ -37,22 +37,27 @@ fill such months with the site's mean for the same calendar month over
 
 OpenET data (OpenET, https://openetdata.org) are subject to the OpenET API Terms
 of Service and are not CC BY: attribute them wherever values are shown, and
-publish only statistics from which no single OpenET value can be solved for.
-:func:`projection_diagonal` tests that: with everything public known (benchmark
-ET, digitized GO26 series, which months or days enter each statistic), every
-published statistic is a linear functional of the unknown OpenET values or,
-for RMSE, R2 and r, has a gradient at the true values; a value is determined
-when its unit vector lies in the span of these rows.  :func:`withheld_stations`
-uses the test to choose the per-station rows of the benchmark summary that
-must stay blank.
+publish only statistics from which no single OpenET value, and no sum or
+difference over fewer than MIN_STRATUM_MONTHS site-months, can be solved for.
+With everything public known (benchmark ET, digitized GO26 series, which months
+or days enter each statistic), every published statistic is a linear functional
+of the unknown OpenET values or, for RMSE, R2, r and slopes, has a gradient at
+the true values.  :func:`projection_diagonal` tests single values: a value is
+determined when its unit vector lies in the span of these rows.
+:func:`small_supports` tests sums: it finds every combination of the rows that
+is nonzero on fewer than MIN_STRATUM_MONTHS site-months.  :func:`withheld_stations`
+uses the first test to choose the per-station rows of the benchmark summary
+that must stay blank.
 """
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from scipy import stats
+from scipy.linalg import null_space
 
 from etcomment import benchmark as bm
 from etcomment import metrics as mt
@@ -69,7 +74,8 @@ CLIMATOLOGY = ("2016-01", "2025-12")
 DAYS_PER_YEAR = 365.25
 AVAIL_PERIOD_COLS = ["site", "le_avail_period"]
 AVAIL_YEAR_COLS = ["site", "year", "le_avail"]
-# smallest number of station-months behind a published OpenET statistic (see withheld_stations)
+# smallest number of site-months behind a published OpenET statistic, or behind any sum or difference that the
+# published statistics give together (see withheld_stations and small_supports)
 MIN_STRATUM_MONTHS = 6
 # a value whose projection onto the published functionals exceeds 1 - IDENT_TOL can be solved for
 IDENT_TOL = 1e-9
@@ -356,6 +362,49 @@ def site_summary(t: pd.DataFrame) -> dict:
     return out
 
 
+def numeric_leaves(x, path: tuple = ()):
+    """(path, value) of every numeric leaf of nested dicts (booleans and strings skipped)."""
+    if isinstance(x, dict):
+        for k, v in x.items():
+            yield from numeric_leaves(v, path + (str(k),))
+    elif isinstance(x, (int, float, np.integer, np.floating)) and not isinstance(x, (bool, np.bool_)):
+        yield path, float(x)
+
+
+def summary_gradients(t: pd.DataFrame, columns, keep=None, rel_step: float = 1e-6) -> dict[tuple, pd.Series]:
+    """Derivatives of the statistics of :func:`site_summary` with respect to per-site values of ``t``.
+
+    ``columns``: the per-site values that vary (e.g. oe_mm_d, p_zf_mm_d); ratio_t1_oe follows oe_mm_d.
+    ``keep``: the statistic paths (tuples of keys, as from :func:`numeric_leaves`) to return; default all.
+    Central differences with a step of rel_step x max(1, |value|).  Returns {path: Series indexed by (site,
+    column)} with the nonzero derivatives (rank statistics such as Spearman's have none).  Each published
+    statistic thus enters the identifiability checks as sum_(site, column) derivative x the functional of the
+    OpenET values that the column is.
+    """
+    base = t.set_index("site")
+
+    def leaves(tt: pd.DataFrame) -> dict:
+        tt = tt.copy()
+        tt["ratio_t1_oe"] = tt["t1_mm_d"] / tt["oe_mm_d"]
+        return {p: v for p, v in numeric_leaves(site_summary(tt.reset_index())) if keep is None or p in keep}
+
+    paths = list(leaves(base))
+    out: dict[tuple, dict] = {p: {} for p in paths}
+    for s in base.index:
+        for c in columns:
+            if c not in base or not np.isfinite(base.loc[s, c]):
+                continue
+            h = rel_step * max(1.0, abs(float(base.loc[s, c])))
+            up, dn = base.copy(), base.copy()
+            up.loc[s, c] += h
+            dn.loc[s, c] -= h
+            lu, ld = leaves(up), leaves(dn)
+            for p in paths:
+                if p in lu and p in ld and np.isfinite(lu[p]) and np.isfinite(ld[p]) and lu[p] != ld[p]:
+                    out[p][(s, c)] = (lu[p] - ld[p]) / (2 * h)
+    return {p: pd.Series(g, dtype=float) for p, g in out.items() if g}
+
+
 # ----------------------------------------------------------------------------- bias statistics
 
 def bias_stats(pred, obs, n_days=None) -> dict:
@@ -445,6 +494,104 @@ def projection_diagonal(rows: pd.DataFrame) -> pd.Series:
     return pd.Series((vt[:rank] ** 2).sum(axis=0), index=rows.columns)
 
 
+def _rank(a: np.ndarray, rtol: float) -> int:
+    if a.size == 0:
+        return 0
+    s = np.linalg.svd(a, compute_uv=False)
+    return int((s > s[0] * rtol).sum()) if s[0] > 0 else 0
+
+
+def _parallel_classes(cols: np.ndarray, rtol: float) -> list[list[int]]:
+    """Indices of parallel columns of ``cols`` (no zero columns)."""
+    u = cols / np.linalg.norm(cols, axis=0)
+    lead = np.argmax(np.abs(u) > 1e3 * rtol, axis=0)
+    u = u * np.sign(u[lead, np.arange(u.shape[1])])
+    digits = max(1, int(round(-np.log10(rtol))) - 1)
+    keys: dict = {}
+    for j in range(u.shape[1]):
+        keys.setdefault(tuple(np.round(u[:, j], digits)), []).append(j)
+    out = list(keys.values())
+    for c in out:  # rounding may split parallel columns (less reduction, same result) but must not merge others
+        if len(c) > 1 and np.abs(u[:, c] - u[:, [c[0]]]).max() > 10.0 ** (1 - digits):
+            raise RuntimeError("small_supports: columns grouped as parallel are not")
+    return out
+
+
+def small_supports(rows: pd.DataFrame, group=None, min_groups: int = MIN_STRATUM_MONTHS, rtol: float = 1e-9,
+                   max_subsets: int = 2_000_000) -> list[tuple]:
+    """Sets of fewer than ``min_groups`` site-months on which a combination of the published functionals lives.
+
+    ``rows`` holds one published linear functional per row (the weights w of
+    sum_j w_j x_j) and one column per unknown OpenET value; ``group`` maps a
+    column label to its site-month (default: the label itself).  A
+    combination of the rows that is zero outside a set U of site-months
+    reveals a sum (a difference, or another combination) of the values in U:
+    rows of 6 site-months each can still give a single month by subtraction.
+    Returns every minimal such U with fewer than ``min_groups`` site-months
+    (sorted tuples of groups, smallest first); [] when there is none.
+
+    Exact up to the relative tolerance ``rtol`` of the rank decisions.
+    Columns that are parallel always enter a combination in a fixed ratio (a
+    class); a class that spans ``min_groups`` or more site-months must get
+    weight 0 in a small combination, so its columns restrict the combinations.
+    The remaining columns are projected and classes re-formed until nothing
+    changes, and the remaining small classes are enumerated: a set U lives
+    under the rows exactly when dropping its columns lowers the rank.  Raises
+    RuntimeError when more than ``max_subsets`` sets would have to be tried.
+    """
+    grp = group if callable(group) else (lambda k: k)
+    rows = rows.fillna(0.0)  # a value outside a row's set has weight 0
+    f = rows.loc[:, (rows.abs() > 0).any()]
+    if f.empty:
+        return []
+    a = f.to_numpy(float)
+    a = a / np.abs(a).max(axis=1, keepdims=True)
+    groups = [grp(k) for k in f.columns]
+    basis = np.eye(a.shape[0])  # combinations still allowed (columns: directions in the row space)
+    alive = np.arange(a.shape[1])
+    while alive.size:
+        p = basis.T @ a[:, alive]
+        norm = np.linalg.norm(p, axis=0)
+        keep = norm > rtol * max(1.0, float(norm.max(initial=0.0)))
+        alive, p = alive[keep], p[:, keep]
+        if not alive.size:
+            break
+        big = [c for c in _parallel_classes(p, rtol) if len({groups[alive[j]] for j in c}) >= min_groups]
+        if not big:
+            break
+        cols = np.concatenate([p[:, c] for c in big], axis=1)
+        nb = null_space(cols.T, rcond=rtol)
+        basis = basis @ nb
+        drop = {j for c in big for j in c}
+        alive = alive[[j for j in range(alive.size) if j not in drop]]
+        if basis.shape[1] == 0:
+            alive = alive[:0]
+    if not alive.size:
+        return []
+    p = basis.T @ a[:, alive]
+    d = _rank(p, rtol)
+    if d == 0:
+        return []
+    cls = _parallel_classes(p, rtol)
+    cg = [frozenset(groups[alive[j]] for j in c) for c in cls]
+    order = [i for i in sorted(range(len(cls)), key=lambda i: (len(cg[i]), i)) if len(cg[i]) < min_groups]
+    found: set[frozenset] = set()
+    tried: set[frozenset] = set()
+    for k in range(1, min_groups):
+        for u in itertools.combinations(order, k):
+            g = frozenset().union(*(cg[i] for i in u))  # every set of < min_groups site-months arises this way
+            if len(g) >= min_groups or g in tried or any(x <= g for x in found):
+                continue
+            tried.add(g)
+            if len(tried) > max_subsets:
+                raise RuntimeError(f"small_supports: more than {max_subsets} sets to try ({len(cls)} classes left)")
+            rest = [j for i in range(len(cls)) if not cg[i] <= g for j in cls[i]]  # drop every column inside g
+            if _rank(p[:, rest], rtol) < d:
+                found.add(g)
+    minimal = [g for g in found if not any(x < g for x in found)]
+    return sorted((tuple(sorted(g)) for g in minimal), key=lambda g: (len(g), g))
+
+
 def published_strata(pairs: pd.DataFrame, strata: dict[str, list[str]], withheld=(), pred: str = "pred",
                      obs: str = "obs", site: str = "site", min_months: int = MIN_STRATUM_MONTHS) -> set[tuple[str, str]]:
     """(stratum_type, stratum) of the rows of :func:`stratified_bias` that are published.
@@ -457,7 +604,7 @@ def published_strata(pairs: pd.DataFrame, strata: dict[str, list[str]], withheld
 
 
 def stratum_functionals(pairs: pd.DataFrame, strata: dict[str, list[str]], published, pred: str = "pred",
-                        obs: str = "obs", n_days: str = "n_days", rmse: bool = True) -> pd.DataFrame:
+                        obs: str = "obs", n_days: str = "n_days", rmse: bool = True, per_day=None) -> pd.DataFrame:
     """Functionals of the predictions given by the published rows of :func:`stratified_bias`.
 
     With the observations and each stratum's pairs known (they follow from the
@@ -465,8 +612,9 @@ def stratum_functionals(pairs: pd.DataFrame, strata: dict[str, list[str]], publi
     give the sum of its predictions, its MBE per day the sum of prediction /
     ``n_days``, and with ``rmse`` its RMSE and R2 the gradient of
     sum (P - O)^2 at the true values.  ``published``: (stratum_type, stratum)
-    of the rows written.  Rows: (stratum_type, stratum, statistic); columns:
-    the index of the pairs with finite values.
+    of the rows written; ``per_day``: those of them whose MBE per day is
+    written (default: all).  Rows: (stratum_type, stratum, statistic);
+    columns: the index of the pairs with finite values.
     """
     p = _finite(pairs, pred, obs)
     inv_d = 1.0 / p[n_days].to_numpy(float)
@@ -477,7 +625,8 @@ def stratum_functionals(pairs: pd.DataFrame, strata: dict[str, list[str]], publi
             continue
         m = p.index.isin(g.index)
         rows[(name, lab, "sum")] = m.astype(float)
-        rows[(name, lab, "sum_per_day")] = np.where(m, inv_d, 0.0)
+        if per_day is None or (name, lab) in per_day:
+            rows[(name, lab, "sum_per_day")] = np.where(m, inv_d, 0.0)
         if rmse:
             rows[(name, lab, "rmse")] = np.where(m, err, 0.0)
     return pd.DataFrame(rows, index=p.index).T if rows else pd.DataFrame(columns=p.index, dtype=float)

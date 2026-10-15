@@ -9,18 +9,35 @@ md5 sums) and MD5SUMS:
   config.zip                                         GO26 Tables 1 and 3, V24 station list
   data_external_golkar_deoliveira_2026.zip           GO26 Figs. 2, 8 and S2 (CC BY 4.0)
   data_raw_ameriflux_public.zip                      cached public AmeriFlux metadata (scripts/11)
-  results.zip                                        derived results
-  figures.zip                                        figures of the comment, QC overlays, site summaries
-  benchmark_site_plots.zip                           benchmark plots of the seven shared towers
+  results.zip                                        derived results, with results/README.txt, a
+                                                     guide to every file (FILE_NOTES below)
+  figures.zip                                        figures of the comment, QC overlays
+  benchmark_site_plots.zip                           benchmark plots of the seven shared towers:
+                                                     figures/site_plots/html/ and static/ (scripts/03)
+                                                     as benchmark_site_plots/html/ and static/, with
+                                                     benchmark_site_plots/README.txt
 
-Not deposited: the other downloads in data/raw/ (the Volk et al. data are on
-Zenodo under their own DOIs; the OpenET extracts need an API key and stay
-local under the OpenET Terms of Service; AmeriFlux BASE files are not
-redistributed), docs/internal/, paper/ and .env.
+figures.zip leaves out figures/site_plots/ (html/, static/ and the Playwright
+snapshots in png_bokeh/) and figures/.gitkeep.  Not deposited: the other
+downloads in data/raw/ (the Volk et al. data are on Zenodo under their own
+DOIs; the OpenET extracts need an API key and stay local under the OpenET Terms
+of Service; AmeriFlux BASE files are not redistributed), docs/internal/,
+paper/ and .env.
 
-The zips are deterministic (sorted entries, fixed timestamps and permissions,
-no .DS_Store or __pycache__), so a rebuild from unchanged files gives the same
-md5 sums.  Run it after the pipeline (README.md, Pipeline).
+The inputs of every archive are checked first: folders present, the figures,
+QC overlays and site plots complete, a FILE_NOTES entry for every results file
+(and every non-optional entry present), no e-mail addresses in the text files
+of the data archives.  A problem stops the script before anything is written.
+The archives are then built in a temporary folder next to --out and moved into
+place at the end, so a failure leaves an existing deposit as it was; zips of an
+earlier build that the new one does not replace (another version) are deleted
+then, other files in --out are kept.
+
+The zips are deterministic (entries sorted by name, fixed timestamps,
+permissions and creator fields, no .DS_Store or __pycache__): a rebuild from
+unchanged files with the same Python and zlib (environment.yml; the README
+records both) gives the same md5 sums, since zlib's deflate output can differ
+between versions.  Run it after the pipeline (README.md, Pipeline).
 
 Usage:
   python scripts/13_make_zenodo_deposit.py [--out zenodo] [--version 1.0.0]
@@ -29,8 +46,14 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
+import platform
+import re
+import shutil
 import subprocess
+import textwrap
 import zipfile
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,7 +61,10 @@ NAME = "openet-bias-correction-comment-afm"
 DOI = "10.5281/zenodo.23383493"
 STAMP = (2026, 10, 15, 0, 0, 0)  # release date, used as every entry's timestamp
 SKIP = {".DS_Store", "__pycache__", ".ipynb_checkpoints", ".pytest_cache"}
-# archive name -> (folder relative to ROOT, contents, licence)
+AFFILIATION = "Desert Research Institute, Reno, Nevada, USA"
+# author line without CITATION.cff (with it, the line, and any ORCID iDs, come from CITATION.cff)
+AUTHORS = "Yeonuk Kim, Sayantan Majumdar, John M. Volk, Peter ReVelle, Todd G. Caldwell, Justin L. Huntington"
+# archive name -> (folder in the archive, relative to ROOT; contents; licence)
 FOLDERS = {
     "config.zip": ("config", "GO26 Tables 1 and 3 (sites, periods, mean observed ET, BASE DOIs and the versions GO26 "
                              "cite), Volk et al. (2024) station list", "CC BY 4.0"),
@@ -47,15 +73,202 @@ FOLDERS = {
                                                 "unchanged from the article", "CC BY 4.0 (Golkar and de Oliveira, 2026)"),
     "data_raw_ameriflux_public.zip": (
         "data/raw/ameriflux_public", "cached public AmeriFlux metadata read by scripts/11: BASE variable-availability "
-                                     "summary (amerifluxr, commit 7319e63), web-service responses and site pages, "
-                                     "with access times and md5 sums", "CC BY 4.0 (AmeriFlux data policy)"),
-    "results.zip": ("results", "derived tables (CSV, JSON) of scripts 04-12", "CC BY 4.0, except OpenET-derived values"),
-    "figures.zip": ("figures", "Figs. 1-5 of the comment (PNG 600 dpi, PDF), QC overlays of the digitization, "
-                               "benchmark site summaries", "CC BY 4.0, except Fig. 2b-d (OpenET-derived)"),
-    "benchmark_site_plots.zip": ("benchmark_site_plots", "benchmark plots of the seven towers shared with GO26: "
-                                                          "Bokeh pages and static summaries", "CC BY 4.0 (Volk et al., 2023c)"),
+                                     "summary (amerifluxr, commit 7319e63), web-service responses and site pages "
+                                     "(e-mail addresses removed), with access times and md5 sums",
+        "AmeriFlux content: metadata CC BY 4.0 (AmeriFlux data policy); site pages included (redacted) for "
+        "provenance"),
+    "results.zip": ("results", "derived tables (CSV, JSON) of scripts 02 (Earth Engine ETo check) and 04-12, with "
+                               "README.txt, a one-line guide to every file",
+                    "CC BY 4.0, except OpenET-derived statistics (OpenET Terms of Service)"),
+    "figures.zip": ("figures", "Figs. 1-5 of the comment (PNG 600 dpi, PDF) and QC overlays of the digitization",
+                    "CC BY 4.0, except Fig. 2b-d (OpenET-derived: OpenET Terms of Service)"),
+    "benchmark_site_plots.zip": (
+        "benchmark_site_plots", "plots of the seven towers shared with GO26 from the Volk et al. (2023c) benchmark, "
+                                "built from `figures/site_plots/` (scripts/03): the benchmark's Bokeh pages (`html/`) "
+                                "and static summaries (`static/`), with README.txt",
+        "CC BY 4.0 (html/: Volk et al., 2023c; static/: this work)"),
 }
 
+FIGURES = ("fig1_US-UTJ_zero_runs", "fig2_zero_fill_bias_and_site_ET", "fig3_site_map", "fig4_shared_site_daily",
+           "fig5_shared_sites")
+QC = ("figures/qc/digitized_US-UTJ_overlay.png", "figures/qc/digitized_US-UiC_overlay.png")
+LEFT_OUT_OF_FIGURES = ("figures/site_plots/", "figures/.gitkeep")  # site plots: benchmark_site_plots.zip
+SITE_PLOTS = "figures/site_plots"  # written by scripts/03_site_plots.py
+SITE_PLOT_PARTS = ("html", "static")  # deposited as benchmark_site_plots/html/ and static/
+SHARED = ("US-ARM", "US-Bi1", "US-Bi2", "US-Ne1", "US-Ne2", "US-Ne3", "US-xSL")
+TEXT_SUFFIXES = {".csv", ".json", ".geojson", ".html", ".htm", ".txt", ".md", ".xml"}
+
+BENCHMARK_README = """\
+Site-specific plots from the Volk et al. (2023a) benchmark for the seven towers shared with
+Golkar & de Oliveira (2026): US-ARM, US-Bi1, US-Bi2, US-Ne1, US-Ne2, US-Ne3, US-xSL.
+
+html/    the benchmark's interactive Bokeh pages (graphical_files/<SITE>_plots.html),
+         unchanged. They load BokehJS 2.1.1 from cdn.bokeh.org, so open them online.
+static/  summaries from the daily data, 6.5 in wide (PNG, 600 dpi, and PDF): daily ET with
+         gap-filled days and OpenET overpass values; daily closure ratio; monthly OpenET vs
+         closed EC ET in months with <= 5 gap-filled days; LE + H vs Rn - G.
+
+Full-page PNG snapshots of the Bokeh pages are not included; scripts/03_site_plots.py renders
+them with Playwright (figures/site_plots/png_bokeh/).
+
+Source data: Volk et al. (2023c), doi:10.5281/zenodo.7636781, and Volk et al. (2023d; the
+OpenET values), doi:10.5281/zenodo.10119477, both CC BY 4.0. scripts/03_site_plots.py writes
+html/ and static/ to figures/site_plots/; scripts/13_make_zenodo_deposit.py copies them into
+this folder of the deposit and writes this README.
+
+Licence: CC BY 4.0. html/: Volk et al. (2023c), the benchmark's own graphical files;
+static/: this work (doi:10.5281/zenodo.23383493).
+"""
+
+# results/README.txt: one line per file of results/ (scripts/13 stops when a file has no entry)
+FILE_NOTES = {
+    "ameriflux_le_availability.csv":
+        "scripts/11: one row per GO26 tower: study period, GO26 Table 1 mean, BASE versions (GO26's and current), "
+        "publish years, LE variables, first LE year, LE availability over the period (le_avail_period, from "
+        "amerifluxr's BASE variable-availability summary) and GO26 mean / availability (implied_mean_valid_mm_d)",
+    "ameriflux_le_availability_by_year.csv":
+        "scripts/11: site x year of each GO26 period: LE availability of the year, days in the year and in the "
+        "period, valid-record days (capped at the period's days)",
+    "ameriflux_public_provenance.json":
+        "scripts/11: URL, access time (UTC) and md5 of every AmeriFlux file used (amerifluxr summary at commit "
+        "7319e63, web services, site pages; page_md5 is the md5 of the page as served)",
+    "benchmark_bowen_ratio_vs_ebr.csv":
+        "scripts/05: per benchmark eddy covariance station: daily Bowen-ratio closed minus EBR-closed ET (median, "
+        "mean, percentiles) and the shares of days with a negative, near-singular or out-of-range (0.5-2) "
+        "Bowen-ratio factor",
+    "benchmark_openet_bias_cropland.csv":
+        "scripts/05: per benchmark cropland station: OpenET Phase II ensemble (Volk et al., 2023d) MBE and RMSE "
+        "against EBR-closed, unclosed and Bowen-ratio closed ET on overpass days; monthly MBE in months with <= 5 "
+        "gap-filled days",
+    "benchmark_zero_fill_shift_cropland.csv":
+        "scripts/05: per cropland station: share f of non-measured days in the calendar-year record, the "
+        "benchmark's gap-fill ET on them (E_gapfill_mm_d) and the bias shift f x E that counting them as zero adds",
+    "benchmark_zero_survey.csv":
+        "scripts/05: per benchmark station (161): measured days, exact-zero days and days within 0.015 mm/d of "
+        "zero of closed ET, negative days and the longest run of near-zero days",
+    "digitized_US-UTJ.csv":
+        "scripts/04: daily observed, OpenET and XGBoost ET digitized from GO26 Fig. S2 (US-UTJ, 2024), with flags "
+        "for interpolated values and exact-zero observations; the openet column is GO26's plotted OpenET line "
+        "(OpenET, https://openetdata.org)",
+    "digitized_US-UiC.csv":
+        "scripts/04: daily observed, OpenET and XGBoost ET digitized from GO26 Fig. 8 (US-UiC, 2020), same columns; "
+        "the openet column is GO26's plotted OpenET line (OpenET, https://openetdata.org)",
+    "digitized_summary.json":
+        "scripts/04: per digitized site: calibration, zero days and runs, means, OpenET and XGBoost RMSE, MBE and "
+        "R2 with and without the exact-zero days, and the statistics printed on GO26's figure",
+    "go26_base_version_check.csv":
+        "scripts/10: per GO26 tower and year of the study period: share of records with LE in the cited BASE file "
+        "and in AmeriFlux's variable-availability summary of October 2025, and in-period LE records of each; per "
+        "tower: whether the cited version is newer than the summary, the month in which the summary's (earlier) "
+        "version ends its LE against GO26's period end, and the cited file's last LE month (AmeriFlux BASE "
+        "derivative)",
+    "go26_observed_et_reconstruction.csv":
+        "scripts/10: per GO26 tower: BASE file, version and DOI, columns used (one net radiometer; the other in "
+        "*_netrad_alt), first and last valid LE and last record, valid and energy-balance days, site means of the "
+        "zero-filled sums (over calendar days and over the days in the file), of valid-day ET (mean of valid "
+        "records, and gap-filled by the mean diurnal variation, *_mdv) and of EBR, screened and unscreened "
+        "Bowen-ratio closed ET, Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 "
+        "(diff_*), implied zero fractions; *_qc: LE flagged 2 in LE_SSITC_TEST removed (AmeriFlux BASE derivative)",
+    "go26_reconstructed_daily.csv":
+        "scripts/10: per tower and day: shares of records with LE and with all energy-balance terms, valid-day ET "
+        "(unfilled and gap-filled), Bowen-ratio, screened and EBR closure factors, EBR, screened and unscreened "
+        "Bowen-ratio closed ET, zero-filled sums, flags (*_qc variants); '#' header with definitions and the site "
+        "BASE DOIs (AmeriFlux BASE derivative)",
+    "go26_reconstructed_figure_check.csv":
+        "scripts/10: GO26's plotted daily observed ET (Figs. 8 and S2, digitized) against the BASE zero-filled daily "
+        "sums: days compared, mean and largest differences, days within 0.02 and 0.1 mm/d, plotted days with fewer "
+        "than half of the records or without LE, exact-zero days (AmeriFlux BASE derivative)",
+    "go26_reconstructed_openet_bias.csv":
+        "scripts/10: OpenET ensemble minus observed ET rebuilt from BASE by GO26 zone and season: zero-filled Table 1 "
+        "sums over all site-months with OpenET (next to GO26's reported bias) and, on identical site-months with >= "
+        "20 valid days, zero-filled, gap-filled unclosed, EBR and screened Bowen-ratio closed ET; OpenET values "
+        "withheld where a single month or any sum or difference over fewer than 6 site-months could be solved for "
+        "(OpenET-derived; observed ET: AmeriFlux BASE derivative)",
+    "go26_reconstructed_winter.csv":
+        "scripts/10: Dec-Feb means per tower (and January, February and January-February 2020 at US-UiC) of "
+        "unclosed (unfilled and gap-filled), EBR, screened and unscreened Bowen-ratio closed and zero-filled ET from "
+        "BASE and Bowen-ratio failure counts, with GO26 Fig. 8 (AmeriFlux BASE derivative)",
+    "leakage_experiment.csv":
+        "scripts/07: XGBoost correction of OpenET Phase II at 38 benchmark cropland stations: RMSE, MBE and gain "
+        "over OpenET per scenario (clean, zero-filled + median-imputed), seed and validation design (random split, "
+        "site-grouped, leave-one-site-out, leave-one-cluster-out)",
+    "leakage_experiment_clusters.csv":
+        "scripts/07: RMSE per multi-station cluster (stations within 10 km) under leave-one-site-out and "
+        "leave-one-cluster-out",
+    "leakage_experiment_met_unfilled.csv":
+        "scripts/07: as leakage_experiment.csv, with missing tower meteorology left unfilled (sensitivity)",
+    "leakage_experiment_met_unfilled_summary.csv":
+        "scripts/07: mean, min and max over the seeds of leakage_experiment_met_unfilled.csv",
+    "leakage_experiment_summary.csv":
+        "scripts/07: mean, min and max over the seeds of leakage_experiment.csv",
+    "leakage_experiment_versions.json":
+        "scripts/07: Python and package versions, seeds, model settings, zero-filled sites, meteorology gaps, "
+        "clusters and input md5 sums",
+    "openet_api_benchmark_summary.csv":
+        "scripts/12: current OpenET (API, collection 2.1; ensemble and six models) against the benchmark's closed "
+        "ET in complete months at the cropland stations, by stratum (all, Koppen class and group, season, season x "
+        "group, site), with GO26's zone and season biases; MBE per day only for the ensemble's pooled strata and "
+        "each model's all-months row; small stations withheld (openet_withheld) (OpenET-derived)",
+    "openet_api_eto_ee_check.csv":
+        "scripts/02 --verify-eto-ee: monthly ETo of the OpenET API against OpenET's bias-corrected gridMET "
+        "collection on Earth Engine at the 75 boxes, differences in mm/month (OpenET-derived)",
+    "openet_api_go26_figure_check.csv":
+        "scripts/12: GO26's plotted OpenET line (digitized Figs. 8 and S2) against the API daily ensemble over all "
+        "plotted days of each figure (US-UiC 2020, US-UTJ 2024): days, means, difference, RMSE, r and least-squares "
+        "scale (OpenET-derived; nothing by month)",
+    "openet_api_go26_sites.csv":
+        "scripts/12: per GO26 tower: OpenET over the study period (ensemble and models; mm/d, mm/yr), "
+        "precipitation, ETo, GO26 Table 1 mean and ratios, LE availability (per-tower zero-fill predictions not "
+        "deposited) (OpenET-derived)",
+    "openet_api_go26_summary.json":
+        "scripts/12: key numbers of the OpenET analysis: cross-tower statistics, the figure check over all plotted "
+        "days, benchmark, shared-tower and US-UiC winter summaries, identifiability checks, definitions and "
+        "provenance (collection, access times, md5 of the raw extracts) (OpenET-derived)",
+    "openet_api_shared_daily.csv":
+        "scripts/12: daily OpenET against measured closed and unclosed ET at the seven towers shared with GO26, by "
+        "season, 2016 onward; seasonal rows of US-xSL and of the seven towers pooled withheld (openet_withheld) "
+        "(OpenET-derived)",
+    "openet_api_uic_winter.csv":
+        "scripts/12: US-UiC winter: GO26 Fig. 8 observed ET (digitized, 2020) and the benchmark's measured winter "
+        "ET at stations of the same Koppen class and the nearest stations, with the benchmark's gridMET ETo (no "
+        "OpenET values)",
+    "shared_site_comparison.csv":
+        "scripts/06: per tower shared with GO26 (7): GO26 mean against the benchmark's long-term means and record "
+        "coverage; OpenET Phase II bias, RMSE and R2 against closed, unclosed and Bowen-ratio closed ET (daily and "
+        "monthly); GO26's zone results (Table 3)",
+    "shared_site_monthly_pairs.csv":
+        "scripts/06: monthly benchmark closed ET (et_corr, mm/month) with gap-filled and valid-day counts and the "
+        "OpenET Phase II ensemble (Volk et al., 2023d) at the seven shared towers",
+    "site_koppen_check.csv":
+        "scripts/09: GO26's Koppen class of each tower against the Rubel et al. (2017) grid, with its map category",
+}
+# entries that a complete pipeline may lack: Earth Engine check (scripts/02), files needing BASE files (scripts/10
+# without BASE files writes only go26_observed_et_reconstruction.csv)
+OPTIONAL_RESULTS = {"openet_api_eto_ee_check.csv", "go26_reconstructed_daily.csv", "go26_reconstructed_winter.csv",
+                    "go26_reconstructed_openet_bias.csv", "go26_base_version_check.csv",
+                    "go26_reconstructed_figure_check.csv"}
+# names every results/go26_* file (AmeriFlux BASE derivatives of scripts/10; tests/test_deposit.py checks this)
+RESULTS_README_HEAD = """\
+results/: derived tables of the comment on Golkar and de Oliveira (2026; GO26), written by the
+numbered scripts (README.md of the code archive, Pipeline). One entry per file: the script that
+writes it and what it holds. Read the CSV files with pandas.read_csv(path, comment="#"): the
+go26_* files other than go26_observed_et_reconstruction.csv start with '#' lines (definitions,
+licence, site DOIs).
+
+Licences: CC BY 4.0 (LICENSE-data.md), except the OpenET-derived statistics in openet_api_* and
+go26_reconstructed_openet_bias.csv: OpenET data (OpenET, https://openetdata.org), subject to the
+OpenET Terms of Service and not covered by CC BY 4.0; attribute OpenET wherever they are shown.
+The go26_* files (scripts/10) derive from AmeriFlux BASE data (CC BY 4.0, AmeriFlux CC-BY-4.0
+data policy) and are CC BY 4.0 themselves, except the OpenET values noted: cite each site's BASE
+DOI (config/go26_sites.csv; base_doi column of go26_observed_et_reconstruction.csv; header of
+go26_reconstructed_daily.csv) with any of
+  go26_base_version_check.csv
+  go26_observed_et_reconstruction.csv
+  go26_reconstructed_daily.csv
+  go26_reconstructed_figure_check.csv
+  go26_reconstructed_openet_bias.csv  (observed ET from BASE; its OpenET values are OpenET-derived)
+  go26_reconstructed_winter.csv
+"""
 
 # the code snapshot outside a git checkout (e.g. an unzipped deposit): what .gitignore lets git track
 CODE_DIRS = (".github", "scripts", "src", "tests")
@@ -63,36 +276,147 @@ CODE_FILES = (".gitignore", "CITATION.cff", "LICENSE", "LICENSE-data.md", "READM
               "environment.yml", "pyproject.toml")
 
 
-def code_files() -> list[str]:
-    """Files git tracks or would track (respects .gitignore), excluding the deposit folder itself."""
+class DepositError(RuntimeError):
+    """The inputs of the deposit are incomplete; nothing was written."""
+
+
+def _inside_root(paths) -> list[str]:
+    """``paths`` that lie inside ROOT, as 'relative/path/' prefixes."""
+    out = []
+    for p in paths:
+        try:
+            out.append(Path(p).resolve().relative_to(ROOT.resolve()).as_posix().rstrip("/") + "/")
+        except ValueError:
+            pass
+    return out
+
+
+def code_files(exclude=()) -> list[str]:
+    """Files git tracks or would track (respects .gitignore), excluding the deposit folder (zenodo/) and the
+    folders in ``exclude`` (--out and the temporary build folder, when inside the repository)."""
     try:
         out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=ROOT,
                              check=True, capture_output=True).stdout.decode()
-        files = [f for f in out.split("\0") if f and not f.startswith("zenodo/")]
+        files = [f for f in out.split("\0") if f]
     except (OSError, subprocess.CalledProcessError):  # no git, or not a git checkout
         files = [f for f in CODE_FILES if (ROOT / f).is_file()]
-        files += [str(p.relative_to(ROOT)) for d in CODE_DIRS if (ROOT / d).is_dir()
+        files += [p.relative_to(ROOT).as_posix() for d in CODE_DIRS if (ROOT / d).is_dir()
                   for p in (ROOT / d).rglob("*") if p.is_file() and p.suffix != ".pyc"
                   and not any(part.endswith(".egg-info") for part in p.parts)]
-    return sorted(f for f in files if (ROOT / f).is_file() and not set(Path(f).parts) & SKIP)
+    prefixes = tuple(["zenodo/", *_inside_root(exclude)])
+    return sorted(f for f in files if (ROOT / f).is_file() and not f.startswith(prefixes)
+                  and not set(Path(f).parts) & SKIP)
 
 
 def folder_files(folder: str) -> list[str]:
+    """Files under ``folder`` (relative to ROOT), sorted; [] if the folder is missing."""
     base = ROOT / folder
     if not base.is_dir():
-        raise FileNotFoundError(f"{folder}/ is missing: run the pipeline (README.md) before packaging")
-    return sorted(str(p.relative_to(ROOT)) for p in base.rglob("*")
+        return []
+    return sorted(p.relative_to(ROOT).as_posix() for p in base.rglob("*")
                   if p.is_file() and not set(p.relative_to(ROOT).parts) & SKIP)
 
 
-def write_zip(path: Path, files: list[str], prefix: str = "") -> None:
-    """Deterministic zip of ``files`` (paths relative to ROOT), stored under ``prefix``."""
+def results_readme(names: list[str]) -> str:
+    """results/README.txt for the files ``names`` of results/ (every one needs a FILE_NOTES entry)."""
+    missing = sorted(set(names) - set(FILE_NOTES))
+    if missing:
+        raise DepositError(f"no FILE_NOTES entry in scripts/13_make_zenodo_deposit.py for results/"
+                           f"{', results/'.join(missing)}: add a one-line description of each")
+    body = []
+    for n in sorted(names):
+        body += ["", n, *textwrap.wrap(FILE_NOTES[n], width=100, initial_indent="    ", subsequent_indent="    ",
+                                       break_on_hyphens=False)]
+    return RESULTS_README_HEAD + "\n".join(body) + "\n"
+
+
+def site_plot_entries(problems: list[str]) -> list[tuple[str, Path | bytes]]:
+    """figures/site_plots/html/ and static/ as benchmark_site_plots/html/ and static/, plus README.txt."""
+    entries: list[tuple[str, Path | bytes]] = []
+    for part in SITE_PLOT_PARTS:
+        src = f"{SITE_PLOTS}/{part}"
+        files = folder_files(src)
+        if not files:
+            problems.append(f"{src}/ is missing or empty: run scripts/03_site_plots.py (--no-render without Chromium)")
+        entries += [(f"benchmark_site_plots/{part}/{f[len(src) + 1:]}", ROOT / f) for f in files]
+    have = {a for a, _ in entries}
+    need = [f"benchmark_site_plots/html/{s}_plots.html" for s in SHARED]
+    need += [f"benchmark_site_plots/static/{s}_summary.{e}" for s in SHARED for e in ("pdf", "png")]
+    lost = [n.replace("benchmark_site_plots/", f"{SITE_PLOTS}/", 1) for n in need if n not in have]
+    if lost and entries:
+        problems.append(f"{len(lost)} site plots of scripts/03 are missing: {', '.join(lost[:4])}"
+                        + (" ..." if len(lost) > 4 else ""))
+    return entries + [("benchmark_site_plots/README.txt", BENCHMARK_README.encode())]
+
+
+def collect(version: str, exclude=()) -> list[tuple[str, list[tuple[str, Path | bytes]], str, str]]:
+    """Every archive as (name, entries, contents, licence), entries as (name in the zip, file or bytes).
+
+    Checks all inputs first and raises DepositError listing every problem, so that nothing is written (and an
+    existing deposit is kept) when one is missing or incomplete.
+    """
+    problems: list[str] = []
+    files = code_files(exclude)
+    code = f"{NAME}-{version}.zip"
+    if not any(f.startswith("scripts/") for f in files):
+        problems.append("no scripts/ found for the code snapshot")
+    archives = [(code, [(f"{NAME}-{version}/{f}", ROOT / f) for f in files],
+                 f"snapshot of the GitHub repository ({len(files)} files: code, tests, README, licences, "
+                 f"CITATION.cff, environment.yml)", "MIT (code)")]
+    for name, (folder, what, lic) in FOLDERS.items():
+        entries: list[tuple[str, Path | bytes]]
+        if name == "benchmark_site_plots.zip":
+            entries = site_plot_entries(problems)
+        else:
+            ff = folder_files(folder)
+            if not ff:
+                problems.append(f"{folder}/ is missing or empty: run the pipeline (README.md) or unzip the deposit")
+            if name == "figures.zip":
+                ff = [f for f in ff if not f.startswith(LEFT_OUT_OF_FIGURES)]
+                need = [f"figures/{f}.{e}" for f in FIGURES for e in ("pdf", "png")] + list(QC)
+                if ff and (lost := [f for f in need if f not in ff]):
+                    problems.append(f"figures missing: {', '.join(lost)} (scripts/04, 06, 08, 09)")
+            if name == "results.zip":
+                ff = [f for f in ff if f != "results/README.txt"]  # written anew below
+            entries = [(f, ROOT / f) for f in ff]
+            if name == "results.zip" and ff:
+                names = [f.split("/", 1)[1] for f in ff]
+                if absent := sorted(set(FILE_NOTES) - OPTIONAL_RESULTS - set(names)):
+                    problems.append(f"results missing: results/{', results/'.join(absent)} (README.md, Pipeline)")
+                try:
+                    entries.append(("results/README.txt", results_readme(names).encode()))
+                except DepositError as err:
+                    problems.append(str(err))
+        for _, src in entries:  # third-party e-mail addresses must not be redistributed
+            if isinstance(src, Path) and src.suffix.lower() in TEXT_SUFFIXES and _has_email(src.read_bytes()):
+                problems.append(f"{src.relative_to(ROOT)} contains e-mail addresses: remove them (scripts/11 does "
+                                f"for the AmeriFlux site pages)")
+        n = len(entries)
+        archives.append((name, entries, f"`{folder}/`: {what} ({n} files)", lic))
+    if problems:
+        raise DepositError("the deposit inputs are incomplete:\n  - " + "\n  - ".join(problems))
+    return archives
+
+
+def _has_email(data: bytes) -> bool:
+    from etcomment import amf_public as amf  # the redaction rule of the cached AmeriFlux pages
+    return amf.redact_emails(data)[1] > 0
+
+
+def write_zip(path: Path, entries) -> None:
+    """Deterministic zip of ``entries`` [(name in the zip, file path or bytes)]: sorted by name, fixed
+    timestamp, permissions (0644) and creator fields (Unix, zip version 2.0 also when built on Windows)."""
+    names = [a for a, _ in entries]
+    if len(set(names)) != len(names):
+        raise ValueError(f"{path.name}: duplicate entries")
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        for f in files:
-            info = zipfile.ZipInfo(prefix + f, date_time=STAMP)
+        for arcname, src in sorted(entries, key=lambda e: e[0]):
+            info = zipfile.ZipInfo(arcname, date_time=STAMP)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
-            z.writestr(info, (ROOT / f).read_bytes(), compresslevel=9)
+            info.create_system = 3
+            info.create_version = info.extract_version = 20
+            z.writestr(info, src if isinstance(src, bytes) else Path(src).read_bytes(), compresslevel=9)
 
 
 def md5(path: Path) -> str:
@@ -107,15 +431,50 @@ def human(size: int) -> str:
     return f"{size / 1e6:.1f} MB" if size >= 1e6 else f"{size / 1e3:.1f} kB"
 
 
+def citation_authors(path: Path) -> list[dict[str, str]]:
+    """Authors of CITATION.cff (given-names, family-names, orcid, ...), read without a YAML parser."""
+    authors: list[dict[str, str]] = []
+    inside = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        if not line.startswith((" ", "-")):  # a top-level key
+            inside = line.split(":", 1)[0].strip() == "authors"
+            continue
+        m = re.match(r"\s*(-\s+)?([\w-]+):\s*(.*?)\s*$", line) if inside else None
+        if m:
+            if m[1]:
+                authors.append({})
+            if authors:
+                authors[-1][m[2]] = m[3].strip("'\"")
+    return authors
+
+
+def author_line(path: Path | None = None) -> str:
+    """'Given Family, ...' from CITATION.cff, each with a link to its ORCID iD when CITATION.cff gives one."""
+    path = path or ROOT / "CITATION.cff"
+    if not path.is_file():
+        return AUTHORS
+    names = []
+    for a in citation_authors(path):
+        name = " ".join(a[k] for k in ("given-names", "family-names") if a.get(k))
+        if orcid := a.get("orcid"):
+            url = orcid if orcid.startswith("http") else f"https://orcid.org/{orcid}"
+            name += f" ([{url.rsplit('/', 1)[-1]}]({url}))"
+        names.append(name)
+    return ", ".join(names)
+
+
 def readme(version: str, rows: list[tuple[str, str, int, str, str]]) -> str:
     table = "\n".join(f"| `{n}` | {c} | {human(size)} | {lic} | `{h}` |" for n, c, size, lic, h in rows)
     code = rows[0][0]
+    built = f"Python {platform.python_version()}, zlib {zlib.ZLIB_RUNTIME_VERSION}"
     return f"""# Code and data for: Comment on Golkar and de Oliveira (2026): Exact-zero observed evapotranspiration undermines the diagnosis of OpenET bias
 
 Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: https://github.com/montimaj/{NAME}
 
-Yeonuk Kim, Sayantan Majumdar, John M. Volk, Peter ReVelle, Todd G. Caldwell, Justin L. Huntington
-(Desert Research Institute, Reno, Nevada, USA)
+{author_line()}
+({AFFILIATION})
 
 ## Description
 
@@ -128,8 +487,20 @@ correcting OpenET satellite evapotranspiration across US climate zones, *Agric. 
 The comment shows that the observed eddy covariance ET used by GO26 counts missing data as zero.
 The deposit holds the code (a snapshot of the GitHub repository) and its inputs and outputs: the
 digitized GO26 figures, the comparison with the Volk et al. (2023a) benchmark, AmeriFlux's public
-data-availability records, the current OpenET collection at GO26's towers and the benchmark
-cropland stations, a train/test leakage experiment, and the figures of the comment.
+data-availability records, observed ET rebuilt from the AmeriFlux BASE files of GO26's 22 towers,
+the current OpenET collection at GO26's towers and the benchmark cropland stations, a train/test
+leakage experiment, and the figures of the comment.
+
+Data dates (UTC, from the provenance files):
+
+- OpenET API extraction (collection 2.1): 15 October 2026, 03:38-04:09 UTC (request log
+  `data/raw/openet_api/manifest.json`, not deposited; `results/openet_api_go26_summary.json`,
+  `provenance`).
+- AmeriFlux public metadata: 15 October 2026, 04:26-04:29 UTC
+  (`data/raw/ameriflux_public/provenance.json`).
+- AmeriFlux BASE files: 15 October 2026, 08:02:54-08:03:22 UTC (`data/raw/ameriflux_base/provenance.json`,
+  not deposited); the versions equal those GO26 cite at all 22
+  sites (`results/go26_observed_et_reconstruction.csv`, `base_version`, `version_matches_go26`).
 
 ## Contents
 
@@ -138,34 +509,72 @@ cropland stations, a train/test leakage experiment, and the figures of the comme
 {table}
 
 Every archive except `{code}` holds paths relative to the repository root.
+`results.zip` includes `results/README.txt`, a one-line guide to every file.
+
+Verify the downloads with `md5sum -c MD5SUMS` (Linux) or `md5 -r *.zip` (macOS; compare with
+`MD5SUMS`). The zips are deterministic: `scripts/13_make_zenodo_deposit.py` rebuilds them with
+the same md5 sums from unchanged files with the same Python and zlib (`environment.yml`; built
+with {built}), since zlib's compressed output can differ between versions.
 
 ## How to use
 
 1. Unzip `{code}`, then unzip the other archives inside the folder it creates
    (`{NAME}-{version}/`), so that `config/`, `data/`, `results/`, `figures/` and
    `benchmark_site_plots/` sit next to `scripts/` and `src/`.
-2. Create the environment: `conda env create -f environment.yml && conda activate etcomment`
-   (exact versions of the direct dependencies; `python -m pytest -q` runs the offline tests).
+2. Inside that folder, create the environment: `conda env create -f environment.yml && conda
+   activate etcomment` (exact versions of the direct dependencies; it installs the code in the
+   folder with `pip install -e .`). Tested with `environment.yml` (Python 3.12.15, macOS arm64);
+   CI runs the tests on Ubuntu with Python 3.11 and 3.12. `python -m pytest -q` runs the offline
+   tests.
 3. Inputs that are not in this deposit (`README.md` in the code archive, Data streams):
    - the Volk et al. (2023c, 2023d) benchmark and OpenET Phase II data, public on Zenodo
      (doi:10.5281/zenodo.7636781, doi:10.5281/zenodo.10119477): `python scripts/01_download_data.py`;
    - the OpenET API extracts (collection 2.1, 200 m x 200 m boxes as in GO26): a free OpenET API
-     key in `OPENET_API_KEY`, then `python scripts/02_download_openet_api.py` (24 requests);
-   - optionally, AmeriFlux BASE files for `scripts/10` (AmeriFlux account).
-4. Run the numbered scripts as listed in `README.md` (Pipeline). `results/` and `figures/` in this
-   deposit are the outputs used in the comment; a rerun with the same inputs reproduces them.
+     key in `OPENET_API_KEY`, then `python scripts/02_download_openet_api.py` (24 requests).
+     Without a key, skip scripts 02 and 12: their outputs are in `results/`. OpenET revises its
+     collections, so a new extraction can differ slightly; if the md5 sums of the raw extracts
+     match those recorded in `results/openet_api_go26_summary.json` (`provenance`: `md5_openet_monthly.csv`,
+     `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*`
+     and Fig. 2 are reproduced exactly;
+   - optionally, AmeriFlux BASE files for `scripts/10` (AmeriFlux account; the versions GO26 cite
+     are in `config/go26_sites.csv`); without them skip `scripts/10`, which would otherwise
+     overwrite `results/go26_observed_et_reconstruction.csv` with status rows.
+4. Run the numbered scripts as listed in `README.md` (Pipeline). `scripts/03` renders PNG
+   snapshots of the benchmark's Bokeh pages with Playwright (`python -m playwright install
+   chromium`), or pass `--no-render`. The Bokeh pages (`benchmark_site_plots/html/`) load
+   BokehJS 2.1.1 from cdn.bokeh.org, so open them online. `results/` and `figures/` in this
+   deposit are the outputs used in the comment; a rerun with the same inputs and environment
+   reproduces them (the figure scripts rerun themselves with PYTHONHASHSEED=0, which makes the
+   PDFs byte-reproducible).
 
 ## Licences
 
 - Code: MIT (`LICENSE`).
-- `config/`, `results/`, `figures/` and `benchmark_site_plots/`: CC BY 4.0 (`LICENSE-data.md`), except
-  values derived from OpenET.
-- OpenET-derived statistics (`results/openet_api_*`, Fig. 2b-d): OpenET data, https://openetdata.org,
-  subject to the OpenET Terms of Service; attribute OpenET wherever they are shown. They are not
-  covered by CC BY 4.0.
+- `config/`, `results/` and `figures/`: CC BY 4.0 (`LICENSE-data.md`), except the
+  OpenET-derived statistics below.
+- `benchmark_site_plots/`: CC BY 4.0; `html/` are the Bokeh pages of Volk et al. (2023c),
+  unchanged; `static/` is this work.
+- OpenET-derived statistics (`results/openet_api_*`, `results/go26_reconstructed_openet_bias.csv`,
+  Fig. 2b-d): OpenET data, subject to the OpenET Terms of Service
+  (https://etdata.org/terms-of-service/); attribute "OpenET, https://openetdata.org" wherever they
+  are shown. They are not covered by CC BY 4.0.
+- AmeriFlux BASE derivatives (`results/go26_base_version_check.csv`,
+  `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_daily.csv`,
+  `results/go26_reconstructed_figure_check.csv`, `results/go26_reconstructed_winter.csv`, and the
+  observed ET of `results/go26_reconstructed_openet_bias.csv`, whose OpenET values are
+  OpenET-derived): CC BY 4.0 under the AmeriFlux CC-BY-4.0 data policy; cite each site's BASE DOI
+  (`config/go26_sites.csv`; also in the `base_doi` column of
+  `results/go26_observed_et_reconstruction.csv` and the header of the daily file).
+- AmeriFlux public metadata (`data/raw/ameriflux_public/`): AmeriFlux content; the metadata are
+  CC BY 4.0 under the AmeriFlux data policy; the site pages are included, with the e-mail
+  addresses removed, for provenance. `results/ameriflux_*` derive from them (CC BY 4.0; attribute
+  AmeriFlux and the site teams).
 - GO26 figures (`data/external/golkar_deoliveira_2026/`): CC BY 4.0, Golkar and de Oliveira (2026).
-- AmeriFlux public metadata (`data/raw/ameriflux_public/`): AmeriFlux CC BY 4.0 data policy.
-- Benchmark Bokeh pages (`benchmark_site_plots/html/`): Volk et al. (2023c), CC BY 4.0.
+
+## Acknowledgements
+
+Funding for the AmeriFlux data portal was provided by the U.S. Department of Energy Office of
+Science.
 
 ## Citation
 
@@ -188,30 +597,55 @@ Claude (Anthropic). The authors reviewed the code and its results and take respo
 """
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
+def install(tmp: Path, out: Path) -> None:
+    """Move the files built in ``tmp`` into ``out``.  Zips of an earlier build that the new one does not replace
+    (another version) are deleted; other files in ``out`` are kept."""
+    out.mkdir(parents=True, exist_ok=True)
+    new = sorted(p.name for p in tmp.iterdir())
+    for old in out.glob("*.zip"):
+        if old.name not in new:
+            old.unlink()
+    for name in new:
+        os.replace(tmp / name, out / name)
+
+
+def build(out: Path, version: str) -> list[tuple[str, str, int, str, str]]:
+    """Check the inputs, build the deposit in a temporary folder next to ``out`` and move it into place.
+
+    Returns the rows of the README table (name, contents, size, licence, md5).  Raises DepositError, with
+    nothing written, when inputs are missing; any other failure leaves ``out`` as it was, too.
+    """
+    out = out.resolve()
+    tmp = out.parent / f".{out.name}.building"
+    archives = collect(version, exclude=(out, tmp))
+    if tmp.exists():
+        shutil.rmtree(tmp)  # left over from an interrupted build
+    tmp.mkdir(parents=True)
+    try:
+        rows = []
+        for name, entries, what, lic in archives:
+            write_zip(tmp / name, entries)
+            rows.append((name, what, (tmp / name).stat().st_size, lic, md5(tmp / name)))
+        (tmp / "README.md").write_text(readme(version, rows), encoding="utf-8")
+        (tmp / "MD5SUMS").write_text("".join(f"{h}  {n}\n" for n, _, _, _, h in rows))
+        install(tmp, out)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return rows
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("--out", default=str(ROOT / "zenodo"))
     ap.add_argument("--version", default="1.0.0")
-    args = ap.parse_args()
-    out = Path(args.out)
-    out.mkdir(parents=True, exist_ok=True)
-    for old in out.glob("*.zip"):
-        old.unlink()
-    code = f"{NAME}-{args.version}.zip"
-    files = code_files()
-    write_zip(out / code, files, prefix=f"{NAME}-{args.version}/")
-    rows = [(code, f"snapshot of the GitHub repository ({len(files)} files: code, tests, README, licences, "
-                   f"CITATION.cff, environment.yml)", "MIT (code)")]
-    for name, (folder, what, lic) in FOLDERS.items():
-        ff = folder_files(folder)
-        write_zip(out / name, ff)
-        rows.append((name, f"`{folder}/`: {what} ({len(ff)} files)", lic))
-    table = [(n, c, (out / n).stat().st_size, lic, md5(out / n)) for n, c, lic in rows]
-    (out / "README.md").write_text(readme(args.version, table))
-    (out / "MD5SUMS").write_text("".join(f"{h}  {n}\n" for n, _, _, _, h in table))
-    for n, _, size, _, h in table:
+    args = ap.parse_args(argv)
+    try:
+        rows = build(Path(args.out), args.version)
+    except DepositError as err:
+        raise SystemExit(f"STOPPED: {err}\nNothing was written; {args.out} is unchanged.") from None
+    for n, _, size, _, h in rows:
         print(f"{h}  {human(size):>9}  {n}")
-    print(f"wrote {len(table)} archives, README.md and MD5SUMS to {out}")
+    print(f"wrote {len(rows)} archives, README.md and MD5SUMS to {args.out}")
 
 
 if __name__ == "__main__":

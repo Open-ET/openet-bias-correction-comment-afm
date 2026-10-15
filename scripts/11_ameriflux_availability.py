@@ -31,8 +31,14 @@ and md5 (data/raw/ameriflux_public/provenance.json, copied to
 results/ameriflux_public_provenance.json), the values read from them
 (base_version_current, base_years_available, publish_years, tower_began, ...)
 are archived in results/ as a snapshot, and the cache itself is deposited with
-the results. Reruns use the cache; a rerun without it fetches the pages again
-and so reflects the network on the rerun date. A cached file without an access
+the results. Site pages are cached without the site teams' e-mail addresses:
+every address, including mailto: links, becomes '[email removed]' before a
+fetched page is written (amf.redact_emails; a page cached earlier with
+addresses is redacted in place on the next run). page_md5 in the provenance
+is the md5 of the page as served; the cache's provenance.json gives it as
+md5_original next to the md5 of the redacted copy, so redaction leaves the
+results unchanged. Reruns use the cache; a rerun without it fetches the pages
+again and so reflects the network on the rerun date. A cached file without an access
 time in the cache's provenance.json (or with provenance.json missing) counts as
 missing, since nothing then dates it. The script therefore stops without
 fetching or writing anything when cached pages or responses are missing and

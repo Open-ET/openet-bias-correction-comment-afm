@@ -160,11 +160,13 @@ def static_panel(root: Path, oe_d: pd.DataFrame, oe_m: pd.DataFrame, site: str) 
     st.check_text_size(fig)
     (OUT / "static").mkdir(parents=True, exist_ok=True)
     for ext in ("png", "pdf"):
-        fig.savefig(OUT / "static" / f"{site}_summary.{ext}", dpi=600)
+        fig.savefig(OUT / "static" / f"{site}_summary.{ext}", dpi=600,
+                    metadata=st.PDF_METADATA if ext == "pdf" else None)
     plt.close(fig)
 
 
 def main() -> None:
+    st.rerun_with_fixed_hash_seed(__name__)  # byte-reproducible PDFs (etcomment.style)
     ap = argparse.ArgumentParser()
     ap.add_argument("--flux", default=str(ROOT / "data/raw/flux_ET_dataset"))
     ap.add_argument("--openet", default=str(ROOT / "data/raw/OpenET_PhaseII_model_ET_dataset"))

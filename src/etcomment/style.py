@@ -15,8 +15,17 @@ Colors follow the validated categorical palette of the dataviz reference
 (first three slots validate all-pairs for color-vision deficiency):
 blue #2a78d6, orange #eb6834, aqua #1baf7a; ink #0b0b0b / #52514e; grid
 #e1e0d9.
+
+Byte-reproducible PDFs. PDFs are saved with ``metadata=PDF_METADATA`` (no
+creation date), and each figure script calls ``rerun_with_fixed_hash_seed``
+first in its main(), because the embedded font subsets otherwise depend on
+Python's per-process string-hash seed (see there).  PNGs depend on neither.
 """
 from __future__ import annotations
+
+import os
+import subprocess
+import sys
 
 import matplotlib as mpl
 from matplotlib import font_manager
@@ -36,6 +45,35 @@ INK2 = "#52514e"
 MUTED = "#898781"
 GRID = "#e1e0d9"
 AXIS = "#c3c2b7"
+
+# savefig(..., metadata=PDF_METADATA) for PDFs: no CreationDate, so the bytes depend only on the figure
+PDF_METADATA = {"CreationDate": None}
+
+
+def rerun_with_fixed_hash_seed(name: str) -> None:
+    """Run the calling script again with PYTHONHASHSEED=0, unless it already runs with it.
+
+    Call it first in a figure script's main() with the module's ``__name__``;
+    it does nothing when the module is imported (tests) or PYTHONHASHSEED is
+    already 0.  Why: matplotlib embeds subsets of the TrueType fonts in PDFs
+    with fontTools, which keeps the AAT 'prop' table of macOS Helvetica.ttc
+    and makes the most common glyph property its default; ties are broken in
+    the iteration order of a set of glyph names, i.e. by string hashes, so the
+    PDF bytes change from run to run with Python's random hash seed.  A fixed
+    seed makes them byte-reproducible; fonts and appearance are unchanged, and
+    PNGs are not affected.  The process is replaced (os.execve) with the same
+    interpreter, options and arguments; on Windows a child process runs and
+    its exit status is passed on.
+    """
+    if name != "__main__" or os.environ.get("PYTHONHASHSEED") == "0":
+        return
+    argv = [sys.executable, *sys.orig_argv[1:]]
+    env = {**os.environ, "PYTHONHASHSEED": "0"}
+    sys.stdout.flush()
+    sys.stderr.flush()
+    if os.name == "nt":
+        raise SystemExit(subprocess.call(argv, env=env))
+    os.execve(sys.executable, argv, env)
 
 
 def _sans() -> list[str]:

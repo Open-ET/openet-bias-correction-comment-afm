@@ -13,7 +13,14 @@ rules of :func:`read_base`:
   lowest position.  H is taken at the position used for LE when it has data
   there, so that the Bowen ratio comes from one eddy-covariance system
   (US-ARM, for example, also reports LE and H at two other levels).
-  Replicates at the chosen position are averaged.
+  Replicates of LE and H at the chosen position are averaged.  Replicates of
+  NETRAD are not: two net radiometers at one position can read differently
+  (at US-UTD, US-UTJ and US-UTV their daytime means differ by 11-33% on
+  shared records) and report at different times, so their mean would switch
+  between instruments.  NETRAD is then the replicate with the
+  most valid records in the file (ties: the lowest replicate), and every
+  replicate is also returned under its BASE name (``attrs["replicates"]``),
+  so that a caller can choose one over its own period.
 * Other variables (G, TA, VPD, WS): the unqualified column when it has any
   data, else all qualified positions averaged (e.g. soil heat flux plates).
   VPD is read from VPD_PI (its name at the GO26 sites) or VPD.
@@ -32,7 +39,10 @@ retained records passing the standard AmeriFlux quality flags".  The daily
 aggregation keeps, for every variable, the fraction of valid sub-daily
 records, so the day filter can be applied exactly (BASE LE holds no
 gap-filled values) and compared with a zero-filled alternative; scripts/10
-applies the quality flag as an option.
+applies the quality flag as an option.  On a day that passes the filter, the
+mean of the valid records is biased where records are missing mostly at one
+time of day (LE at night at several GO26 towers); :func:`mdv_daily` fills
+them first with the mean diurnal variation (Falge et al., 2001).
 
 :func:`download_base` requests BASE-BADM zips from the AmeriFlux
 data-download web service with the same fields as amerifluxr's
@@ -75,6 +85,7 @@ G_PI_F = r"^G_PI_F(_\d+_\d+_\d+)?$"
 LE_FLAG = r"^LE_SSITC_TEST(_\d+_\d+_\d+)?$"
 QUALIFIER = re.compile(r"_(\d+)_(\d+)_(\d+)$")
 ONE_POSITION = ("LE", "H", "NETRAD")
+APART = ("NETRAD",)  # replicates not averaged (two radiometers at one position read differently)
 
 SITE_ID = re.compile(r"^[A-Z]{2}-[A-Za-z0-9]{3}$")
 BASE_CSV = re.compile(r"^AMF_(?P<site>[A-Z]{2}-[A-Za-z0-9]{3})_BASE_(?P<resolution>HH|HR)_(?P<version>\d+-\d+)\.csv$")
@@ -98,8 +109,8 @@ CCBY4_GUIDELINES = (
     "recommended publication.\n"
     "(3) Acknowledge funding for supporting AmeriFlux data portal: U.S. Department of Energy Office "
     "of Science.")
-DEFAULT_DESCRIPTION = ("Rebuilding the observed ET of Golkar and de Oliveira (2026, Agric. For. Meteorol. "
-                       "391, 111524) from AmeriFlux BASE for a Comment on that paper")
+DEFAULT_DESCRIPTION = ("Re-analysis of the observed ET used by Golkar and de Oliveira (2026, Agric. For. "
+                       "Meteorol. 391, 111524) and evaluation of OpenET at AmeriFlux cropland sites")
 
 
 class AmeriFluxError(RuntimeError):
@@ -206,7 +217,9 @@ def read_base(path: str | Path) -> pd.DataFrame:
 
     Only variables present in the file are returned; the column rules are in
     the module docstring.  ``attrs["columns"]`` records the BASE columns
-    behind each variable.
+    behind each variable; ``attrs["replicates"]`` the replicates of a variable
+    in APART (NETRAD) that are kept apart, each also returned as a column
+    under its BASE name, when its position has more than one with data.
     """
     pats = {k: re.compile(v) for k, v in VARS.items()}
     gpf, flag = re.compile(G_PI_F), re.compile(LE_FLAG)
@@ -224,6 +237,7 @@ def read_base(path: str | Path) -> pd.DataFrame:
     df = df[~df.index.duplicated()].sort_index()
     out = pd.DataFrame(index=df.index)
     used: dict[str, list[str]] = {}
+    replicates: dict[str, list[str]] = {}
     le_position = None
     for name, pat in pats.items():
         cols = [c for c in df.columns if pat.match(c)]
@@ -232,6 +246,14 @@ def read_base(path: str | Path) -> pd.DataFrame:
         use, pos = _choose_columns(df, name, cols, prefer=le_position if name == "H" else None)
         if name == "LE":
             le_position = pos
+        reps = sorted(c for c in use if df[c].notna().any())
+        if name in APART and len(reps) > 1:
+            n = {c: int(df[c].notna().sum()) for c in reps}
+            first = max(reps, key=lambda c: n[c])  # ties: the lowest replicate
+            out[name], used[name], replicates[name] = df[first], [first], reps
+            for c in reps:
+                out[c] = df[c]
+            continue
         out[name] = df[use].mean(axis=1, skipna=True)
         used[name] = use
     gap_filled_g = [c for c in df.columns if gpf.match(c)]
@@ -246,6 +268,7 @@ def read_base(path: str | Path) -> pd.DataFrame:
             used["LE_SSITC_TEST"] = flags
     out.index.name = "timestamp"
     out.attrs["columns"] = used
+    out.attrs["replicates"] = replicates
     return out
 
 
@@ -264,6 +287,36 @@ def daily(hh: pd.DataFrame) -> pd.DataFrame:
     d = pd.concat([means, frac], axis=1)
     d.index.name = "date"
     return d
+
+
+def mdv_daily(x: pd.Series, days: pd.DatetimeIndex, window: int = 15) -> pd.DataFrame:
+    """Daily means of a sub-daily series whose missing records are filled by the mean diurnal variation.
+
+    A missing record takes the mean of the valid records at the same time of
+    day on the days of a centred ``window``-day window (Falge et al., 2001;
+    truncated at the ends of ``days``).  Only records on ``days`` (consecutive
+    calendar days) are used; records off the time-step grid are ignored.  A
+    record whose time of day has no valid value in the window stays missing
+    and the day's mean is taken over the others.  Returns per day: mean, and
+    the counts of valid (n_valid), filled (n_filled) and still missing
+    (n_unfilled) records.
+    """
+    days = pd.DatetimeIndex(days)
+    if not len(days):
+        return pd.DataFrame(columns=["mean", "n_valid", "n_filled", "n_unfilled"], index=days, dtype=float)
+    if (days[-1] - days[0]).days + 1 != len(days):
+        raise ValueError("days must be consecutive calendar days")
+    step = time_step(x.index)
+    per_day = int(pd.Timedelta("1D") / step)
+    grid = pd.date_range(days[0], periods=len(days) * per_day, freq=step)
+    m = pd.DataFrame(x.reindex(grid).to_numpy(float).reshape(len(days), per_day), index=days)
+    have = m.notna()
+    num = m.fillna(0.0).rolling(window, center=True, min_periods=1).sum()
+    den = have.astype(float).rolling(window, center=True, min_periods=1).sum()
+    filled = m.where(have, num / den.where(den > 0))
+    return pd.DataFrame({"mean": filled.mean(axis=1), "n_valid": have.sum(axis=1),
+                         "n_filled": (~have & filled.notna()).sum(axis=1),
+                         "n_unfilled": filled.isna().sum(axis=1)}, index=days)
 
 
 def zero_filled_daily_sum(hh_et: pd.Series) -> pd.Series:

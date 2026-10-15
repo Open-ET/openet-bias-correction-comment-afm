@@ -318,6 +318,7 @@ def test_main_writes_both_variants_with_the_same_records_and_splits(tmp_path, mo
     assert not p["rmse_model"].equals(u["rmse_model"])
     assert set(pd.read_csv(out / "leakage_experiment_clusters.csv")["cluster"]) == {"S-A+S-B"}
     prov = json.loads((out / "leakage_experiment_versions.json").read_text())
+    assert "run_utc" not in prov  # no run time: a rerun reproduces the file byte for byte
     assert list(prov["zero_fill"]["sites_by_seed"]) == ["0", "1"]
     tm = prov["tower_meteorology"]["variants"]
     assert set(tm) == set(mod.VARIANTS) and tm["primary"]["outputs"][-1] == "results/leakage_experiment_clusters.csv"

@@ -206,6 +206,7 @@ LAKES = None
 
 
 def main() -> None:
+    st.rerun_with_fixed_hash_seed(__name__)  # byte-reproducible PDFs (etcomment.style)
     ap = argparse.ArgumentParser()
     ap.add_argument("--stations", default=str(ROOT / "config" / "volk2024_stations.csv"),
                     help="config/volk2024_stations.csv (default) or the Station_metadata.xlsx")
@@ -223,7 +224,7 @@ def main() -> None:
         fig = fn(go, v, raster, states)
         st.check_text_size(fig)
         for ext in ("pdf", "png"):
-            fig.savefig(OUT / f"{name}.{ext}", dpi=600)
+            fig.savefig(OUT / f"{name}.{ext}", dpi=600, metadata=st.PDF_METADATA if ext == "pdf" else None)
         plt.close(fig)
         print("wrote", OUT / f"{name}.pdf")
 
