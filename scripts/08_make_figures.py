@@ -14,15 +14,29 @@ Fig. 2  (a) Apparent OpenET bias created by zero-filled observations.
             their observed ET rebuilt from the BASE files (scripts/10, all zones):
             as GO26's Table 1, missing data counted as zero (diamonds), and on
             valid days, gap-filled and closed with the energy-balance ratio (dots).
+Table 1 figure (fig_table1_*; not yet numbered in the comment): GO26 Table 1 mean
+        observed ET against the site means rebuilt from the AmeriFlux BASE files
+        (scripts/10), one point per site, in a 2 x 2 grid:
+        (a) missing values set to zero: daily sums of the available half-hours,
+            missing half-hours and days counted as zero, over the calendar days
+            of the period;
+        (b) missing values excluded: the mean of the valid half-hours on days
+            with at least half of them (GO26's stated 50% filter), over those days;
+        (c) gaps filled: as (b), with the missing half-hours of those days filled
+            from the mean diurnal cycle of a centred 15-day window;
+        (d) as (c), closed with the screened Bowen-ratio factor (GO26's stated
+            method, Twine et al., 2000; scripts/10); (a)-(c) have no closure.
 
 Inputs: results/digitized_US-UTJ.csv, results/digitized_summary.json (scripts/04),
 config/go26_sites.csv, results/ameriflux_le_availability.csv (scripts/11),
 results/openet_api_go26_sites.csv and openet_api_benchmark_summary.csv (scripts/12;
 OpenET API, collection 2.1) and, optionally, results/go26_reconstructed_openet_bias.csv
-(scripts/10, which needs the AmeriFlux BASE files; without it Fig. 2d has no markers).
+(scripts/10, which needs the AmeriFlux BASE files; without it Fig. 2d has no markers)
+and results/go26_observed_et_reconstruction.csv (scripts/10; without it the Table 1
+figure is not drawn).
 OpenET values carry the attribution the OpenET API Terms of Service require
 (OpenET, https://openetdata.org).
-Outputs: figures/fig1_*.{pdf,png}, figures/fig2_*.{pdf,png}.
+Outputs: figures/fig1_*.{pdf,png}, figures/fig2_*.{pdf,png}, figures/fig_table1_*.{pdf,png}.
 """
 from __future__ import annotations
 
@@ -68,6 +82,18 @@ GO26_TOWER_MARKERS = {"zero_filled": ("D", 20, "white", st.ORANGE, 1.0, "rebuilt
 GO26_TOWERS_TITLE = "GO26 towers, OpenET 2.1 vs"
 RING_PT = 0.8
 SEASON_CODE = {"winter": "DJF", "spring": "MAM", "summer": "JJA", "fall": "SON"}
+# Table 1 figure: site means of scripts/10 (all without closure) against GO26's Table 1
+RECON_SITES = "go26_observed_et_reconstruction.csv"
+TABLE1_REF = "go26_table1_mean_obs_et"
+TABLE1_SERIES = {  # column of scripts/10 (one panel each): marker face, panel title
+    "mean_et_hh_sum_zero_filled_unclosed": (st.ORANGE, "Missing values set to zero"),
+    "mean_et_unclosed_valid": (st.BLUE, "Missing values excluded"),
+    "mean_et_unclosed_mdv": (st.AQUA, "Missing values gap-filled"),
+    "mean_et_br_screened_mdv": (st.INK, "Gap-filled and closure-corrected"),
+}
+TABLE1_TOL = 0.04  # mm/d; Table 1 is rounded to 0.01 mm/d
+# sites labelled in the zero-filled panel (outside TABLE1_TOL): label position (mm/d) and alignment
+TABLE1_LABELS = {"US-UTV": (1.08, 0.80, "left"), "US-UTD": (0.12, 1.22, "left")}
 
 
 def zero_spans(df: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp, int]]:
@@ -391,11 +417,78 @@ def fig2() -> None:
     _save(fig, "fig2_zero_fill_bias_and_site_ET")
 
 
+def table1_agreement(r: pd.DataFrame, tol: float = TABLE1_TOL) -> pd.DataFrame:
+    """Per TABLE1_SERIES column, over the sites with both values (differences rebuilt minus GO26's Table 1, mm/d):
+    sites, mean and RMS difference, sites within ``tol`` (and within 0.01), and the smallest and largest difference."""
+    rows = {}
+    for col in TABLE1_SERIES:
+        d = (r[col] - r[TABLE1_REF]).dropna()
+        rows[col] = {"n_sites": len(d), "mean_diff": d.mean(), "rmsd": float(np.sqrt((d ** 2).mean())),
+                     "n_within_tol": int((d.abs() <= tol + 1e-9).sum()),
+                     "n_within_0p01": int((d.abs() <= 0.01 + 1e-9).sum()), "min_diff": d.min(), "max_diff": d.max()}
+    return pd.DataFrame(rows).T
+
+
+def _signed(v: float) -> str:
+    return f"{v:+.2f}".replace("-", "−")
+
+
+def fig_table1() -> None:
+    f = RES / RECON_SITES
+    if not f.exists():
+        print(f"results/{RECON_SITES} not found (scripts/10): Table 1 figure not drawn")
+        return
+    st.nature(8)
+    r = pd.read_csv(f)
+    r = r[r["status"] == "ok"].set_index("site")
+    agree = table1_agreement(r)
+    x = r[TABLE1_REF]
+    zf = next(iter(TABLE1_SERIES))
+    lim = np.ceil(np.nanmax(r[list(TABLE1_SERIES)].to_numpy()) * 4 + 0.5) / 4  # shared by all panels
+    ticks = np.arange(0, lim, 0.5)
+    fig = plt.figure(figsize=(W, 6.25))
+    side, gap_x, gap_y = 2.55, 0.42, 0.36
+    left = (W - (2 * side + gap_x)) / 2 + 0.2  # the grid centred, with room for the y labels on the left
+    up = ScaledTranslation(0, 1.5 / 72, fig.dpi_scale_trans)
+    for i, (col, (fc, title)) in enumerate(TABLE1_SERIES.items()):
+        row, c = divmod(i, 2)
+        ax = _axes(fig, left + c * (side + gap_x), 0.5 + (1 - row) * (side + gap_y), side, side)
+        ax.plot([0, lim], [0, lim], color=st.INK2, lw=0.75, ls="--", zorder=1)
+        ax.text(lim - 0.3, lim - 0.3, "1:1", fontsize=7.5, color=st.INK2, ha="right", va="bottom", rotation=45,
+                transform_rotates_text=True, rotation_mode="anchor", transform=ax.transData + up)
+        ax.scatter(x, r[col], s=24, facecolor=fc, edgecolor="white", lw=0.6, zorder=3)
+        if col == zf:  # the sites outside the band, with leaders
+            d = r[col] - x
+            for site, (tx, ty, ha) in TABLE1_LABELS.items():
+                if site in d.index and abs(d[site]) > TABLE1_TOL + 1e-9:
+                    ax.annotate(site, xy=(x[site], r.loc[site, col]), xytext=(tx, ty), fontsize=7.5, color=st.INK,
+                                ha=ha, va="center",
+                                arrowprops=dict(arrowstyle="-", lw=0.6, color=st.INK, shrinkA=1, shrinkB=3))
+        a_ = agree.loc[col]
+        ax.text(0.97, 0.03, f"Mean diff. {_signed(a_.mean_diff)} mm d$^{{-1}}$\nRMSD {a_.rmsd:.2f} mm d$^{{-1}}$\n"
+                f"Within ±{TABLE1_TOL:.2f}: {a_.n_within_tol:.0f} of {a_.n_sites:.0f}",
+                transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5, color=st.INK, linespacing=1.3)
+        ax.set_xlim(0, lim)
+        ax.set_ylim(0, lim)
+        ax.set_aspect("equal")
+        ax.set_xticks(ticks, [f"{t:g}" for t in ticks] if row else [])
+        ax.set_yticks(ticks, [] if c else [f"{t:g}" for t in ticks])
+        if not c:
+            ax.set_ylabel("Reproduced EC ET (mm d$^{-1}$)")
+        if row:
+            ax.set_xlabel("GO26 EC ET, Table 1 (mm d$^{-1}$)")
+        for text, dx, kw in (("abcd"[i], 0, dict(fontsize=10, fontweight="bold")), (title, 12, dict(fontsize=8))):
+            ax.annotate(text, xy=(0, 1), xycoords="axes fraction", xytext=(dx, 7), textcoords="offset points",
+                        va="baseline", ha="left", color=st.INK, **kw)
+    _save(fig, "fig_table1_reconstruction")
+
+
 def main() -> None:
     st.rerun_with_fixed_hash_seed(__name__)  # byte-reproducible PDFs (etcomment.style)
     fig1()
     fig2()
-    print("wrote figures/fig1_*, figures/fig2_*")
+    fig_table1()
+    print("wrote figures/fig1_*, figures/fig2_*, figures/fig_table1_*")
 
 
 if __name__ == "__main__":

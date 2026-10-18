@@ -211,7 +211,7 @@ deposited `results/go26_*`. Times are for a recent laptop with the inputs in pla
 | `05_benchmark_checks.py` | benchmark, OpenET Phase II | `results/benchmark_*.csv` | seconds |
 | `06_shared_site_comparison.py` | benchmark, OpenET Phase II, `config/` | `results/shared_site_*.csv`, `figures/fig4_*`, `figures/fig5_*` | seconds |
 | `07_leakage_experiment.py` | benchmark, OpenET Phase II | `results/leakage_experiment*` | about 10 min (two meteorology variants) |
-| `08_make_figures.py` | outputs of 04, 11 and 12, and of 10 for the GO26-tower markers in Fig. 2d; `config/` | `figures/fig1_*`, `figures/fig2_*` | seconds |
+| `08_make_figures.py` | outputs of 04, 11 and 12, and of 10 for the GO26-tower markers in Fig. 2d and the Table 1 figure; `config/` | `figures/fig1_*`, `figures/fig2_*`, `figures/fig_table1_*` (GO26 Table 1 against the site means rebuilt from BASE) | seconds |
 | `09_make_maps.py` | `config/` | `figures/fig3_site_map.*`, `results/site_koppen_check.csv` | seconds |
 | `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 20 s |
 | `11_ameriflux_availability.py` | internet on the first run, `config/` | `data/raw/ameriflux_public/`, `results/ameriflux_*` | seconds |
