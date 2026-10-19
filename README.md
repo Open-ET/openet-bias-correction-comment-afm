@@ -138,7 +138,11 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   stations; the MBE per day of single stations and of the six models' strata; the seasonal
   rows of US-xSL and of the seven shared towers pooled; the per-tower zero-fill predictions
   and daily-based means; and some zone-by-season rows of
-  `results/go26_reconstructed_openet_bias.csv`. The tables with OpenET values (the full
+  `results/go26_reconstructed_openet_bias.csv`. `scripts/14` then checks all their published
+  numbers together (rebuilt as linear functionals of the raw extracts and validated against
+  the published values; nonlinear statistics through their gradients; an exact search for
+  combinations of fewer than six site-months, with positive controls), and `scripts/13`
+  builds the deposit only from files that passed it. The tables with OpenET values (the full
   per-tower table, the GO26 figure check by day set and month, the benchmark station-months
   and the US-UiC winter comparison) are written to `data/raw/openet_api/derived/` and are
   not deposited.
@@ -174,9 +178,11 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   version used (`base_version`, `version_matches_go26`).
 * The script writes GO26's Table 1 as reproduced (half-hourly ET summed with missing records
   and days counted as zero, over calendar days, no closure), valid-day means with missing
-  records filled from the mean diurnal cycle, energy-balance closure (EBR as in
-  flux-data-qaqc, plus a last fill for days it leaves without a factor, as the main variant;
-  screened Bowen ratio; the unscreened Bowen ratio only as a diagnostic), a comparison of
+  records filled from the mean diurnal cycle, energy-balance closure (the Bowen-ratio method
+  as GO26 state it, applied as flux-data-qaqc's `br` correction, unscreened, to the
+  valid-day means and to the gap-filled ones; EBR as in flux-data-qaqc, plus a last fill for days it
+  leaves without a factor, as the main variant; screened Bowen ratio; the unscreened Bowen
+  ratio on every day only as a diagnostic), a comparison of
   the cited files with AmeriFlux's October 2025 availability
   summary (the `scripts/11` cache), a day-by-day check of GO26's Figs. 8 and S2 (digitized by
   `scripts/04`) and, with the OpenET monthly extract (`scripts/02`), the OpenET bias by
@@ -198,8 +204,9 @@ visual check of the zero stripe in its scatter plot.
 ## Pipeline
 
 Run the scripts from the repository root in numeric order, except that `10`, `11` and `12`
-must run before `08` (Fig. 2 uses their outputs) and `11` before `10` (`10` reads the
-availability summary cached by `11`). Without the BASE files, skip `10` and keep the
+must run before `08` (Fig. 2 uses their outputs), `11` before `10` (`10` reads the
+availability summary cached by `11`) and `14` before `13` (`13` requires the record of the
+joint disclosure check). Without the BASE files, skip `10` and keep the
 deposited `results/go26_*`. Times are for a recent laptop with the inputs in place.
 
 | Script | Needs | Writes | Time |
@@ -216,7 +223,8 @@ deposited `results/go26_*`. Times are for a recent laptop with the inputs in pla
 | `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 20 s |
 | `11_ameriflux_availability.py` | internet on the first run, `config/` | `data/raw/ameriflux_public/`, `results/ameriflux_*` | seconds |
 | `12_openet_api_analysis.py` | outputs of 02, 04, 06 and 11; benchmark; `config/` | `results/openet_api_*`, `data/raw/openet_api/derived/` | seconds |
-| `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/` | `zenodo/` (archives, README.md, MD5SUMS) | seconds |
+| `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/`, the record of 14 (`--no-disclosure-check` without it) | `zenodo/` (archives, README.md, MD5SUMS) | seconds |
+| `14_check_openet_disclosure.py` | outputs of 10 and 12, `data/raw/openet_api/` (raw and `derived/`), benchmark, `config/` | `data/raw/openet_api/derived/disclosure_check.json` (not deposited) | about 10 min |
 
 ```bash
 python scripts/01_download_data.py
@@ -232,6 +240,7 @@ python scripts/12_openet_api_analysis.py
 python scripts/10_reconstruct_go26_observed_et.py --qc-flags   # needs the BASE files
 python scripts/08_make_figures.py                     # after 10, 11 and 12
 python scripts/09_make_maps.py
+python scripts/14_check_openet_disclosure.py          # joint OpenET disclosure check (needs the extracts)
 python scripts/13_make_zenodo_deposit.py              # package the Zenodo deposit in zenodo/
 ```
 
@@ -309,18 +318,27 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
   outside 0.5-2 on 2,794 of 23,357 energy-balance days (12.0%) at the 21 towers with net
   radiation (1.7-26.2% by tower; 81% in November-March), and the closed daily ET it gives
   ranges from -12,389 mm/day (US-Mo1, 4 December 2024) to 9,533 mm/day (US-UTV, 11 January
-  2024). US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2. The Utah towers
+  2024). GO26 name only the Bowen-ratio method (Twine et al., 2000). Applied as they state
+  it, as flux-data-qaqc's `br` correction (since version 0.4.0 flux-data-qaqc leaves out
+  days whose closed LE is <= -100 or >= 850 W/m2: 100 of the 23,357 days, 104 with
+  gap-filled LE), it gives site means 0.29-2.12 mm/day above GO26's Table 1 (mean +1.24;
+  `mean_et_br_fdq`), and 0.28-1.74 mm/day (mean +1.07; `mean_et_br_fdq_mdv`, Fig. 1d of
+  the comment) applied to the gap-filled valid-day means.
+  US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2. The Utah towers
   have two net radiometers that disagree: with the other one, the EBR-closed gap-filled
   means change from 2.19 to 2.63 (US-UTD), 2.31 to 1.58 (US-UTJ) and 1.68 to 1.95 mm/day
   (US-UTV).
 * **OpenET at GO26's towers** (`go26_reconstructed_openet_bias.csv`; collection 2.1,
   monthly). Against the zero-filled monthly observations (1,019 site-months, 22 towers) the
   bias is +0.65 mm/day, and +0.09, +0.45, +1.44 and +0.56 in winter, spring, summer and
-  fall, close to GO26's +0.60 and +0.08, +0.41, +1.34 and +0.57. On the 823 site-months
-  with at least 20 valid days at the 21 towers with closure (the same months for every
-  variant) it is +0.49 against the zero-filled sums, +0.28 against the gap-filled valid-day
-  means, -0.27 against EBR-closed and -0.22 against screened Bowen-ratio-closed ET (summer
-  +1.12, +0.77, -0.16 and -0.13), against -0.22 mm/day at the benchmark croplands (below).
+  fall, close to GO26's +0.60 and +0.08, +0.41, +1.34 and +0.57. On the 742 site-months
+  at the 21 towers with closure that have at least 20 valid days with all energy-balance
+  terms (the same days and months for every variant) it is +0.50 against the zero-filled
+  sums; against GO26's processing as they state it, +0.17 against the valid-day means and
+  -0.43 against Bowen-ratio-closed ET; and against the gap-filled valid-day means +0.30
+  unclosed, -0.24 Bowen-ratio closed as GO26 state it, -0.25 EBR-closed and -0.21 with the
+  screened Bowen ratio (summer +1.09; +0.55 and -0.44; +0.76, -0.14, -0.16 and -0.14),
+  against -0.22 mm/day at the benchmark croplands (below).
 
 **Seven towers shared with the Volk et al. (2023a) benchmark (`scripts/06`; Table 4, Figs. 4 and 5).**
 

@@ -35,9 +35,18 @@ GO26 cite (one file per site; all inputs offline):
     0.5 < 1/median < 2; on the other days flux-data-qaqc's day-of-year
     climatology of these medians; on days still without a factor, a last
     fill that flux-data-qaqc does not have (it leaves those days without a
-    factor): 1/median of all the filtered ratios of the period.  Screened
-    Bowen ratio (et_br_screened, et_br_screened_mdv; GO26's method,
-    screened): the day's factor (NETRAD - G)/(LE + H) where it is 0.5-2 with
+    factor): 1/median of all the filtered ratios of the period.  Bowen ratio
+    as GO26 state it (et_br_fdq): their Section 2.1 names the Bowen-ratio
+    method (Twine et al., 2000) and nothing more, and they compared it with
+    EBR using flux-data-qaqc's routines, so it is applied as flux-data-qaqc's
+    'br' correction (etcomment.closure.fdq_bowen_ratio_le): the valid-day LE
+    times the day's factor (NETRAD - G)/(LE + H), unscreened and without gap
+    filling, on energy-balance days; days on which the closed LE is <= -100
+    or >= 850 W m-2 (or the Bowen ratio is undefined) are left without a
+    value, as flux-data-qaqc does since version 0.4.0; et_br_fdq_mdv: the
+    same applied to the gap-filled valid-day LE.  Screened Bowen ratio
+    (et_br_screened, et_br_screened_mdv; our screen of it): the day's factor
+    (NETRAD - G)/(LE + H) where it is 0.5-2 with
     LE + H > 0 and NETRAD - G > 0; every other valid day takes the median of
     the passing factors in a centred 15-day window if the window holds at
     least 5 of them, otherwise the median of all passing factors of the
@@ -86,10 +95,12 @@ GO26 cite (one file per site; all inputs offline):
     GO26 climate zone and season over two month sets: all site-months with
     OpenET against the zero-filled monthly sums (GO26's observed ET as
     reproduced; next to GO26's reported biases), and the months with >= 20
-    days on which every valid-day variant exists (a closure factor too, so
-    US-WT1 drops out), on which the zero-filled sums, the gap-filled unclosed
-    mean and the EBR and screened Bowen-ratio closed means are compared on
-    identical site-months.  OpenET values are not CC BY: the OpenET mean and
+    days on which every valid-day variant exists (energy-balance days on
+    which the Bowen ratio as GO26 state it has a value, so US-WT1 drops out),
+    on which the zero-filled sums, the valid-day mean and the Bowen-ratio
+    closed mean as GO26 state them, the gap-filled unclosed mean and its
+    Bowen-ratio (as GO26 state it), EBR and screened Bowen-ratio closed means
+    are compared on identical days and site-months.  OpenET values are not CC BY: the OpenET mean and
     bias of a row are left blank wherever they would let a single month's
     value, or any sum or difference over fewer than six site-months, be
     solved for (withhold_openet)
@@ -171,25 +182,29 @@ SITE_NOTES = {"US-RGB": "flooded rice: water heat storage is not measured, so th
                         "on many days"}
 QC_BAD = 2  # LE_SSITC_TEST value removed by --qc-flags
 MDV_WINDOW = 15  # days of the mean-diurnal-variation gap fill
-# valid-day variants compared on identical site-months in the OpenET bias table (variant, daily column)
-VALID_VARIANTS = [("unclosed_mdv", "et_unclosed_mdv"), ("ebr_mdv", "et_ebr_mdv"),
-                  ("br_screened_mdv", "et_br_screened_mdv")]
+# valid-day variants compared on identical days and site-months in the OpenET bias table (variant, daily column):
+# GO26's processing as they state it (50% day filter, Bowen-ratio closure), then gap-filled, EBR, screened BR
+VALID_VARIANTS = [("unclosed", "et_unclosed"), ("br_fdq", "et_br_fdq"), ("unclosed_mdv", "et_unclosed_mdv"),
+                  ("br_fdq_mdv", "et_br_fdq_mdv"), ("ebr_mdv", "et_ebr_mdv"), ("br_screened_mdv", "et_br_screened_mdv")]
 
 COUNT_STATS = ["valid_LE_days", "valid_EB_days", "mdv_unfilled_records", "n_br_factor_negative", "n_br_factor_lt05",
-               "n_br_factor_gt2", "n_br_screen_fail", "valid_EB_days_nov_mar", "n_br_screen_fail_nov_mar"]
+               "n_br_factor_gt2", "n_br_screen_fail", "n_br_fdq_left_out", "n_br_fdq_mdv_left_out",
+               "valid_EB_days_nov_mar", "n_br_screen_fail_nov_mar"]
 LE_STATS = ["valid_LE_days", "valid_EB_days", "retained_pct", "f_days_missing", "le_record_availability",
             "mdv_filled_share", "mdv_unfilled_records",
             "mean_et_unclosed_valid", "mean_et_unclosed_mdv", "mean_et_unclosed_zero_filled",
             "mean_et_hh_sum_zero_filled_unclosed", "mean_et_hh_sum_zero_filled_file_days",
-            "mean_et_ebr", "mean_et_ebr_mdv", "mean_et_br_screened", "mean_et_br_screened_mdv",
-            "mean_et_br_unscreened", "median_ebr_factor",
-            "n_br_factor_negative", "n_br_factor_lt05", "n_br_factor_gt2", "n_br_screen_fail",
+            "mean_et_br_fdq", "mean_et_br_fdq_mdv", "mean_et_ebr", "mean_et_ebr_mdv", "mean_et_br_screened",
+            "mean_et_br_screened_mdv", "mean_et_br_unscreened", "median_ebr_factor",
+            "n_br_factor_negative", "n_br_factor_lt05", "n_br_factor_gt2", "n_br_screen_fail", "n_br_fdq_left_out",
+            "n_br_fdq_mdv_left_out",
             "valid_EB_days_nov_mar", "n_br_screen_fail_nov_mar",
             "max_et_br_unscreened", "max_et_br_unscreened_date", "min_et_br_unscreened", "min_et_br_unscreened_date"]
 DIFF_KEYS = ["mean_et_hh_sum_zero_filled_unclosed", "mean_et_hh_sum_zero_filled_file_days",
-             "mean_et_unclosed_zero_filled", "mean_et_unclosed_valid", "mean_et_unclosed_mdv", "mean_et_ebr_mdv",
-             "mean_et_br_screened_mdv"]
-NETRAD_ALT_STATS = ["valid_EB_days", "mean_et_ebr", "mean_et_ebr_mdv", "mean_et_br_screened_mdv", "n_br_screen_fail"]
+             "mean_et_unclosed_zero_filled", "mean_et_unclosed_valid", "mean_et_unclosed_mdv", "mean_et_br_fdq",
+             "mean_et_br_fdq_mdv", "mean_et_ebr_mdv", "mean_et_br_screened_mdv"]
+NETRAD_ALT_STATS = ["valid_EB_days", "mean_et_br_fdq", "mean_et_br_fdq_mdv", "mean_et_ebr", "mean_et_ebr_mdv",
+                    "mean_et_br_screened_mdv", "n_br_screen_fail"]
 QC_COLUMNS = (["le_flag_column", "le_records_flag2"] + [f"{k}_qc" for k in LE_STATS]
               + [f"diff_{k}_qc" for k in DIFF_KEYS] + ["f_implied_qc", "f_implied_unfilled_qc"])
 SUMMARY_COLUMNS = [
@@ -205,10 +220,10 @@ COUNT_COLUMNS = (["calendar_days", "file_days", "period_days_before_first_LE", "
                   "go26_fig8_obs_days", "le_records_flag2", *COUNT_STATS, *(f"{k}_qc" for k in COUNT_STATS)]
                  + [f"{k}_netrad_alt" for k in NETRAD_ALT_STATS if k in COUNT_STATS])
 DAILY_COLUMNS = ["site", "date", "le_frac", "eb_frac", "et_unclosed", "et_unclosed_mdv", "br_factor",
-                 "br_factor_screened", "ebr_factor", "et_ebr", "et_ebr_mdv", "et_br_screened", "et_br_screened_mdv",
-                 "et_br_unscreened", "et_hh_sum_zero_filled", "flags"]
-QC_DAILY = ["le_frac", "et_unclosed", "et_unclosed_mdv", "et_ebr_mdv", "et_br_screened_mdv",
-            "et_hh_sum_zero_filled"]  # also written as *_qc with --qc-flags
+                 "br_factor_screened", "ebr_factor", "et_br_fdq", "et_br_fdq_mdv", "et_ebr", "et_ebr_mdv",
+                 "et_br_screened", "et_br_screened_mdv", "et_br_unscreened", "et_hh_sum_zero_filled", "flags"]
+QC_DAILY = ["le_frac", "et_unclosed", "et_unclosed_mdv", "et_br_fdq", "et_br_fdq_mdv", "et_ebr_mdv",
+            "et_br_screened_mdv", "et_hh_sum_zero_filled"]  # also written as *_qc with --qc-flags
 
 
 def period_days(start: str, end: str) -> pd.DatetimeIndex:
@@ -264,6 +279,8 @@ def _le_variant(le: pd.Series, period: pd.DatetimeIndex, lam: float, eb: pd.Data
     f_scr = br["screened"].where(le_ok)
     f_ebr = cl.ebr_factor(s["flux"], s["energy"], eb_ok).where(le_ok)
     et_br = et_unclosed * factor  # unscreened: NaN off energy-balance days
+    et_fdq = cl.fdq_bowen_ratio_le(d["LE"].where(eb_ok), s["flux"], s["energy"]) * to_et  # as GO26 state it
+    et_fdq_mdv = cl.fdq_bowen_ratio_le(mdv["mean"].where(eb_ok), s["flux"], s["energy"]) * to_et
     et_zero = af.zero_filled_daily_sum(af.et_per_step(le, lam, step)).reindex(period, fill_value=0.0)
     in_file = period <= file_end.normalize()
     nov_mar = pd.Series(period.month.isin(NOV_MAR), index=period)
@@ -281,6 +298,7 @@ def _le_variant(le: pd.Series, period: pd.DatetimeIndex, lam: float, eb: pd.Data
              "mean_et_unclosed_zero_filled": float(et_unclosed.fillna(0.0).mean()),
              "mean_et_hh_sum_zero_filled_unclosed": float(et_zero.mean()),
              "mean_et_hh_sum_zero_filled_file_days": float(et_zero[in_file].mean()),
+             "mean_et_br_fdq": float(et_fdq.mean()), "mean_et_br_fdq_mdv": float(et_fdq_mdv.mean()),
              "mean_et_ebr": float((et_unclosed * f_ebr).mean()), "mean_et_ebr_mdv": float((et_mdv * f_ebr).mean()),
              "mean_et_br_screened": float((et_unclosed * f_scr).mean()),
              "mean_et_br_screened_mdv": float((et_mdv * f_scr).mean()), "mean_et_br_unscreened": float(et_br.mean()),
@@ -288,13 +306,16 @@ def _le_variant(le: pd.Series, period: pd.DatetimeIndex, lam: float, eb: pd.Data
              "n_br_factor_negative": int((factor < 0).sum()),
              "n_br_factor_lt05": int(((factor >= 0) & (factor < lo)).sum()),
              "n_br_factor_gt2": int((factor > hi).sum()), "n_br_screen_fail": int(fail.sum()),
+             "n_br_fdq_left_out": int((eb_ok & et_fdq.isna()).sum()),
+             "n_br_fdq_mdv_left_out": int((eb_ok & et_fdq_mdv.isna()).sum()),
              "valid_EB_days_nov_mar": int((eb_ok & nov_mar).sum()),
              "n_br_screen_fail_nov_mar": int((fail & nov_mar).sum()),
              "max_et_br_unscreened": max_br, "max_et_br_unscreened_date": max_day,
              "min_et_br_unscreened": min_br, "min_et_br_unscreened_date": min_day}
     days = {"le_frac": le_frac, "le_ok": le_ok, "eb_frac": eb_frac, "eb_ok": eb_ok, "et_unclosed": et_unclosed,
             "et_unclosed_mdv": et_mdv, "mdv_unfilled": mdv["n_unfilled"], "br_factor": factor, "br_passed": passed,
-            "br_factor_screened": f_scr, "ebr_factor": f_ebr, "et_ebr": et_unclosed * f_ebr,
+            "br_factor_screened": f_scr, "ebr_factor": f_ebr, "et_br_fdq": et_fdq, "et_br_fdq_mdv": et_fdq_mdv,
+            "et_ebr": et_unclosed * f_ebr,
             "et_ebr_mdv": et_mdv * f_ebr,
             "et_br_screened": et_unclosed * f_scr, "et_br_screened_mdv": et_mdv * f_scr, "et_br_unscreened": et_br,
             "et_hh_sum_zero_filled": et_zero}
@@ -408,6 +429,8 @@ def reconstruct_site(base_dir: Path, site: str, start: str, end: str, go26_versi
         "BR_factor_lt05": (factor >= 0) & (factor < lo),
         "BR_factor_gt2": factor > hi,
         "BR_screen_fail": eb_ok & ~days["br_passed"],
+        "BR_fdq_left_out": eb_ok & days["et_br_fdq"].isna(),
+        "BR_fdq_mdv_left_out": eb_ok & days["et_br_fdq_mdv"].isna(),
     }
     values = [c for c in DAILY_COLUMNS if c not in ("site", "date", "flags")]
     table = pd.DataFrame({"site": site, "date": period, **{k: days[k].to_numpy() for k in values},
@@ -470,6 +493,7 @@ def winter_rows(site: str, table: pd.DataFrame, fig8: dict | None = None) -> lis
             "mean_et_unclosed_valid": s["et_unclosed"].mean(), "mean_et_unclosed_mdv": s["et_unclosed_mdv"].mean(),
             "max_et_unclosed_mdv": s["et_unclosed_mdv"].max(), "valid_EB_days": int(eb.sum()),
             "mean_et_unclosed_mdv_on_EB_days": s.loc[eb, "et_unclosed_mdv"].mean(),
+            "mean_et_br_fdq": s["et_br_fdq"].mean(), "mean_et_br_fdq_mdv": s["et_br_fdq_mdv"].mean(),
             "mean_et_ebr_mdv": s["et_ebr_mdv"].mean(), "max_et_ebr_mdv": s["et_ebr_mdv"].max(),
             "mean_et_br_screened_mdv": s["et_br_screened_mdv"].mean(),
             "mean_et_br_unscreened": s["et_br_unscreened"].mean(), "max_et_br_unscreened": s["et_br_unscreened"].max(),
@@ -638,9 +662,11 @@ def openet_bias(monthly: pd.DataFrame, openet: pd.DataFrame, zones: dict, report
     month_set 'all_months': every month of the study period with OpenET data, against the zero-filled sums
     (variant zero_filled_table1, GO26's observed ET as reproduced; go26_reported_bias_mm_d only here);
     'common_valid_months': the months in which every valid-day variant has a value (:func:`monthly_observed`),
-    on which the zero-filled sums and the valid-day variants (VALID_VARIANTS) are compared on identical
-    site-months.  OpenET values are not CC BY: openet_mm_d and bias_mm_d are blanked where they could be
-    solved for (:func:`withhold_openet` with ``min_months``; 0 keeps every value, not for publication).
+    on which the zero-filled sums and the valid-day variants (VALID_VARIANTS: GO26's processing as they state it,
+    unclosed and Bowen-ratio closed; then the gap-filled mean, unclosed and closed with that Bowen ratio, EBR or the
+    screened Bowen ratio) are compared on identical site-months.  OpenET values are not CC BY: openet_mm_d and
+    bias_mm_d are blanked where they could be solved for (:func:`withhold_openet` with ``min_months``; 0 keeps
+    every value, not for publication).
     """
     o = openet.rename(columns={"date": "month", "et_ensemble": "openet"})[["site", "month", "openet"]]
     o = o.assign(month=pd.to_datetime(o["month"]))
@@ -865,7 +891,7 @@ def _within(d: pd.Series) -> str:
 
 def print_summary(out: pd.DataFrame, ok: pd.Series, qc_flags: bool) -> None:
     show = ["site", "valid_LE_days", "le_record_availability", "mean_et_unclosed_valid", "mean_et_unclosed_mdv",
-            "mean_et_ebr_mdv", "mean_et_br_screened_mdv", "mean_et_br_unscreened",
+            "mean_et_br_fdq", "mean_et_br_fdq_mdv", "mean_et_ebr_mdv", "mean_et_br_screened_mdv", "mean_et_br_unscreened",
             "mean_et_hh_sum_zero_filled_unclosed", "go26_table1_mean_obs_et",
             "diff_mean_et_hh_sum_zero_filled_unclosed", "diff_mean_et_hh_sum_zero_filled_file_days", "f_implied",
             "f_implied_unfilled"]
@@ -889,6 +915,10 @@ def print_summary(out: pd.DataFrame, ok: pd.Series, qc_flags: bool) -> None:
     if worst is not None:
         print(f"Largest unscreened Bowen-ratio closed ET: {worst['max_et_br_unscreened']:.1f} mm/d at "
               f"{worst['site']} on {worst['max_et_br_unscreened_date']}")
+    lo, hi = cl.FDQ_LE_LIMITS
+    print(f"Bowen ratio as GO26 state it (flux-data-qaqc 'br'): {int(s['n_br_fdq_left_out'].sum())} of {eb} "
+          f"energy-balance days left out (closed LE <= {lo:g} or >= {hi:g} W/m2, or Bowen ratio undefined); "
+          f"{int(s['n_br_fdq_mdv_left_out'].sum())} with the gap-filled LE")
     alt = s[s["netrad_column_alt"].fillna("").ne("")]
     for r in alt.itertuples(index=False):
         print(f"{r.site}: NETRAD {r.netrad_column} (EBR closed, gap-filled {r.mean_et_ebr_mdv:.3f} mm/d); with "
@@ -1014,13 +1044,18 @@ def main(argv: list[str] | None = None) -> None:
         "15-day window (11-day if that holds fewer than 5) where 0.5 < 1/median < 2, else its day-of-year",
         "climatology of these; days still without a factor take 1/median of all the filtered ratios of the study",
         "period, a last fill that flux-data-qaqc does not have (it leaves those days without a factor).",
+        "et_br_fdq: Bowen-ratio closure as GO26 state it (Twine et al., 2000), applied as flux-data-qaqc's 'br'",
+        "correction: et_unclosed x br_factor, unscreened, on energy-balance days; blank where the closed LE is <= -100",
+        "or >= 850 W/m2 or the Bowen ratio is undefined (flux-data-qaqc >= 0.4.0; flag BR_fdq_left_out);",
+        "et_br_fdq_mdv: the same with et_unclosed_mdv (flag BR_fdq_mdv_left_out).",
         "et_ebr, et_br_screened: et_unclosed x factor; *_mdv: et_unclosed_mdv x factor (et_ebr_mdv: main closed ET);",
-        "et_br_unscreened: et_unclosed x br_factor (diverges as LE + H -> 0; diagnostic only).",
+        "et_br_unscreened: et_unclosed x br_factor on every energy-balance day (diverges as LE + H -> 0; diagnostic).",
         "et_hh_sum_zero_filled: daily sum of sub-daily ET with missing records counted as zero (pandas",
         "resample('D').sum() default; reproduces GO26 Table 1). G: PI gap-filled where BASE has no measured G, 0",
         "where it has none (G_zero); NETRAD: one radiometer per site (go26_observed_et_reconstruction.csv).",
         "flags: no_LE, LE_lt_50pct, LE_partial, MDV_unfilled, before_first_LE, after_last_LE, after_file_end,",
-        "EB_missing, G_PI_F, G_zero, BR_factor_negative, BR_factor_lt05, BR_factor_gt2, BR_screen_fail.", *qc_note])
+        "EB_missing, G_PI_F, G_zero, BR_factor_negative, BR_factor_lt05, BR_factor_gt2, BR_screen_fail,",
+        "BR_fdq_left_out, BR_fdq_mdv_left_out.", *qc_note])
 
     fig8 = go26_fig8_reference(out_dir / "digitized_US-UiC.csv")
     winter = pd.DataFrame([w for t in tables for w in winter_rows(t["site"].iloc[0], t, fig8)])
@@ -1103,9 +1138,11 @@ def main(argv: list[str] | None = None) -> None:
         "site-months of (OpenET - observed)/days in month. month_set all_months: every site-month with OpenET,",
         "against the zero-filled monthly sums (zero_filled_table1, GO26's observed ET as reproduced);",
         "go26_reported_bias_mm_d: GO26 Tables 3-4, on these rows only. month_set common_valid_months: months with",
-        f">= {args.min_valid_days} days on which every valid-day variant exists; zero_filled_table1, unclosed_mdv",
-        "(gap-filled valid-day mean), ebr_mdv (EBR closed) and br_screened_mdv (screened Bowen-ratio closed) on",
-        "identical site-months (definitions in go26_reconstructed_daily.csv).",
+        f">= {args.min_valid_days} days on which every valid-day variant exists; zero_filled_table1, GO26's",
+        "processing as they state it, unclosed (valid-day mean) and br_fdq (Bowen-ratio closed as flux-data-qaqc's",
+        "'br' correction), then unclosed_mdv (gap-filled valid-day mean), br_fdq_mdv (gap-filled, Bowen-ratio closed",
+        "as GO26 state it), ebr_mdv (EBR closed) and br_screened_mdv (screened Bowen-ratio closed), on identical days",
+        "and site-months (definitions in go26_reconstructed_daily.csv).",
         "OpenET values withheld (openet_withheld, withheld_rule): openet_mm_d and bias_mm_d are blank in rows with",
         f"fewer than {n} site-months (n_months), in rows of one zone and season whose site-months differ by 1-{n - 1}",
         "from those of a kept row (difference), in parts of a published zone or season total that would leave",

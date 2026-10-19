@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import os
 import re
 import subprocess
@@ -84,7 +85,16 @@ def _repo(s13) -> Path:
             p.write_bytes(content)
         else:
             p.write_text(content)
+    _record(s13)
     return s13.ROOT
+
+
+def _record(s13, **over) -> None:
+    """A record of scripts/14 that covers the OpenET-derived results as they are now."""
+    files = {p.relative_to(s13.ROOT).as_posix(): s13.md5(p) for p in sorted((s13.ROOT / "results").glob("openet_api_*"))}
+    rec = s13.ROOT / s13.DISCLOSURE_RECORD
+    rec.parent.mkdir(parents=True, exist_ok=True)
+    rec.write_text(json.dumps({"passed": True, "complete": True, "files": files, **over}))
 
 
 def _snapshot(folder: Path) -> dict[str, bytes]:
@@ -193,6 +203,32 @@ def test_inputs_are_checked_before_the_old_deposit_is_touched(s13, tmp_path, mon
     now = _snapshot(out)
     assert f"{s13.NAME}-2.0.0.zip" in now and f"{s13.NAME}-1.0.0.zip" not in now
     assert now["notes.txt"] == b"kept\n" and now["config.zip"] == before["config.zip"]
+
+
+def test_deposit_needs_a_current_joint_disclosure_check(s13, tmp_path, capsys):
+    root = _repo(s13)
+    out = tmp_path / "deposit"
+    s13.build(out, "1.0.0")
+    before = _snapshot(out)
+    (root / "results/openet_api_go26_sites.csv").write_text("col\nchanged after the check\n")
+    with pytest.raises(s13.DepositError, match=r"changed since the joint OpenET disclosure check: "
+                                               r"results/openet_api_go26_sites.csv: run scripts/14"):
+        s13.build(out, "1.0.0")
+    _record(s13)
+    (root / "results/openet_api_extra.csv").write_text("x\n1\n")  # an OpenET-derived file the check never read
+    with pytest.raises(s13.DepositError, match="did not read: results/openet_api_extra.csv"):
+        s13.build(out, "1.0.0")
+    (root / "results/openet_api_extra.csv").unlink()
+    for over, msg in (({"passed": False}, "failed"), ({"complete": False}, "was partial")):
+        _record(s13, **over)
+        with pytest.raises(s13.DepositError, match=msg):
+            s13.build(out, "1.0.0")
+    (root / s13.DISCLOSURE_RECORD).unlink()
+    with pytest.raises(s13.DepositError, match="disclosure_check.json not found"):
+        s13.build(out, "1.0.0")
+    assert _snapshot(out) == before
+    s13.main(["--out", str(out), "--version", "1.0.0", "--no-disclosure-check"])  # e.g. from an unzipped deposit
+    assert "WARNING: --no-disclosure-check" in capsys.readouterr().out
 
 
 def test_missing_site_plot_folders_and_figures_are_reported(s13, tmp_path):

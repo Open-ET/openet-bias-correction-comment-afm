@@ -15,9 +15,11 @@ negative or extreme, which is what an unscreened BR closure will pass on.
 
 For daily data built from sub-daily records (AmeriFlux BASE, scripts/10):
 ``matched_daily_means`` forms LE + H and NETRAD - G from the records in which
-all four are valid, ``screened_br_factor`` gives a screened daily Bowen-ratio
-factor and ``ebr_factor`` the EBR factor of flux-data-qaqc, the code behind
-the Volk et al. (2023a) benchmark and V24, for every day.
+all four are valid, ``fdq_bowen_ratio_le`` gives the daily Bowen-ratio closed
+LE of flux-data-qaqc's 'br' correction (unscreened), ``screened_br_factor`` a
+screened daily Bowen-ratio factor and ``ebr_factor`` the EBR factor of
+flux-data-qaqc, the code behind the Volk et al. (2023a) benchmark and V24, for
+every day.
 """
 from __future__ import annotations
 
@@ -26,6 +28,7 @@ import pandas as pd
 
 LAMBDA_CONST = 2.45  # MJ kg-1, value used by Golkar & de Oliveira (2026)
 BR_BOUNDS = (0.5, 2.0)  # daily Bowen-ratio factors kept by screened_br_factor
+FDQ_LE_LIMITS = (-100.0, 850.0)  # W m-2: closed LE that flux-data-qaqc's 'br' correction leaves out (>= 0.4.0)
 
 
 def wm2_to_mj(x):
@@ -113,6 +116,20 @@ def matched_daily_means(hh: pd.DataFrame, per_day: int) -> pd.DataFrame:
     out["frac"] = g.size() / per_day
     out.index.name = "date"
     return out
+
+
+def fdq_bowen_ratio_le(le: pd.Series, flux: pd.Series, energy: pd.Series, limits=FDQ_LE_LIMITS) -> pd.Series:
+    """Daily Bowen-ratio closed LE of flux-data-qaqc's 'br' correction (Volk et al., 2021; Twine et al., 2000).
+
+    The day's available energy NETRAD - G (``energy``) is split with its measured Bowen ratio:
+    LE_c = (NETRAD - G)/(1 + H/LE) = LE (NETRAD - G)/(LE + H), with ``flux`` = LE + H; the factor is not
+    screened.  Days on which the Bowen ratio is undefined (LE = 0, or LE + H = 0) or LE_c <= limits[0] or
+    >= limits[1] are left without a value, as in flux-data-qaqc since version 0.4.0 (6 October 2026; earlier
+    versions kept every day).  All in W m-2.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        le_c = le * energy / flux
+    return le_c.where(np.isfinite(le_c) & (le != 0) & (le_c > limits[0]) & (le_c < limits[1]))
 
 
 def screened_br_factor(flux: pd.Series, energy: pd.Series, ok: pd.Series, bounds=BR_BOUNDS, window: int = 15,

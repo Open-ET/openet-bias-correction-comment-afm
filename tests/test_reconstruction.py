@@ -191,6 +191,19 @@ def test_screened_bowen_ratio_factor():
     assert np.allclose(few["screened"], 1.2) and few["passed"].sum() == 4
 
 
+def test_fdq_bowen_ratio_follows_flux_data_qaqc():
+    """LE_c = (Rn - G)/(1 + H/LE), unscreened; undefined Bowen ratios and LE_c <= -100 or >= 850 W m-2 left out."""
+    le = pd.Series([100.0, 100.0, 0.0, 100.0, 100.0, 100.0, 10.0, 100.0, 100.0, 100.0])
+    flux = pd.Series([150.0, 0.0, 50.0, 150.0, -10.0, 20.0, 50.0, 100.0, 100.0, 40.0])   # LE + H
+    energy = pd.Series([180.0, 50.0, 60.0, np.nan, 200.0, 180.0, -400.0, 850.0, -100.0, 120.0])
+    out = cl.fdq_bowen_ratio_le(le, flux, energy)
+    h = flux - le
+    assert np.isclose(out[0], 120.0) and np.isclose(out[0], energy[0] / (1 + h[0] / le[0]))
+    assert np.isclose(out[6], -80.0)                       # negative but inside the limits: kept
+    assert np.isclose(out[9], 300.0)                       # factor 3, far outside 0.5-2: not screened
+    assert out[[1, 2, 3, 4, 5, 7, 8]].isna().all()         # Bowen ratio -1 or undefined, NaN input, limits (edges too)
+
+
 def test_ebr_factor_follows_flux_data_qaqc():
     """IQR filter, 15-day median (>= 5 values) else 11-day median, (0.5, 2) test, then the day-of-year
     climatology centred on the next day, then the median."""
@@ -250,6 +263,13 @@ def test_closure_uses_matched_records_gap_fill_and_screens_singular_days(tmp_pat
     assert np.allclose(day["et_ebr_mdv"], day["et_unclosed_mdv"] * 1.2)
     assert res["max_et_br_unscreened"] > 100 * res["mean_et_br_screened"]
     assert res["max_et_br_unscreened_date"] == "2024-06-15" and res["valid_EB_days_nov_mar"] == 0
+    # as GO26 state it (flux-data-qaqc 'br'): valid-day mean x the day's factor; 15 June (closed LE > 850) left out
+    assert np.isnan(day.loc["2024-06-15", "et_br_fdq"]) and "BR_fdq_left_out" in day.loc["2024-06-15", "flags"]
+    assert np.allclose(day.loc[normal, "et_br_fdq"], 1.2 * day.loc[normal, "et_unclosed"])
+    assert res["n_br_fdq_left_out"] == 1 and np.isclose(res["mean_et_br_fdq"], 1.2 * C * (15 * 200 + 14 * 105) / 29)
+    # the same with the gap-filled LE (105 W m-2 every day)
+    assert np.isnan(day.loc["2024-06-15", "et_br_fdq_mdv"]) and "BR_fdq_mdv_left_out" in day.loc["2024-06-15", "flags"]
+    assert res["n_br_fdq_mdv_left_out"] == 1 and np.isclose(res["mean_et_br_fdq_mdv"], 1.2 * 105 * C)
 
 
 def test_reconstruction_chooses_one_net_radiometer_per_period(tmp_path, rec):
@@ -570,8 +590,9 @@ def _daily_table(site, start, end, et, valid_days, eb_days=None, closure=1.0):
     unclosed = np.where(ok, et, np.nan)
     closed = np.where(eb & ok, et * closure, np.nan)
     return pd.DataFrame({"site": site, "date": dates, "le_frac": ok.astype(float), "eb_frac": (eb & ok).astype(float),
-                         "et_unclosed": unclosed, "et_unclosed_mdv": unclosed, "et_ebr_mdv": closed,
-                         "et_br_screened_mdv": closed, "et_hh_sum_zero_filled": np.where(ok, et, 0.0), "flags": ""})
+                         "et_unclosed": unclosed, "et_br_fdq": closed, "et_unclosed_mdv": unclosed,
+                         "et_br_fdq_mdv": closed, "et_ebr_mdv": closed, "et_br_screened_mdv": closed,
+                         "et_hh_sum_zero_filled": np.where(ok, et, 0.0), "flags": ""})
 
 
 def test_openet_bias_shows_the_zero_fill_effect(tmp_path, rec):
@@ -607,10 +628,11 @@ def test_openet_bias_shows_the_zero_fill_effect(tmp_path, rec):
     assert unc["n_months"] == 10 and np.isclose(unc["bias_mm_d"], 0.0) and np.isnan(unc["go26_reported_bias_mm_d"])
     ebr = get("BSk", "all", "common_valid_months", "ebr_mdv")
     assert ebr["n_months"] == 10 and np.isclose(ebr["bias_mm_d"], -0.5)
-    # the four variants of a common_valid_months row are on identical site-months
+    assert np.isclose(get("BSk", "all", "common_valid_months", "br_fdq")["bias_mm_d"], -0.5)
+    # the zero-filled sums and the valid-day variants of a common_valid_months row are on identical site-months
     common = bias[bias["month_set"].eq("common_valid_months")]
     assert common.groupby(["koppen_go26", "season"])["n_months"].nunique().eq(1).all()
-    assert common.groupby(["koppen_go26", "season"]).size().eq(4).all()
+    assert common.groupby(["koppen_go26", "season"]).size().eq(1 + len(rec.VALID_VARIANTS)).all()
     dim = months[:12].days_in_month.to_numpy()
     valid = np.array([25] * 6 + [10] + [25] * 5)
     zf_all = get("BSk", "all", "all_months", "zero_filled_table1")
@@ -752,7 +774,8 @@ def test_main_withholds_openet_values_that_could_be_solved_for(tmp_path, rec, ca
     # independent check: rebuild every row's site-months from the published daily table and OpenET months
     daily = pd.read_csv(out / "go26_reconstructed_daily.csv", comment="#", parse_dates=["date"])
     d = daily.assign(month=daily["date"].dt.to_period("M").dt.to_timestamp(),
-                     common=daily[["et_unclosed_mdv", "et_ebr_mdv", "et_br_screened_mdv"]].notna().all(axis=1))
+                     common=daily[["et_unclosed", "et_br_fdq", "et_unclosed_mdv", "et_br_fdq_mdv", "et_ebr_mdv",
+                                   "et_br_screened_mdv"]].notna().all(axis=1))
     sm = d.groupby(["site", "month"]).agg(n=("common", "sum")).reset_index()
     sm = sm.merge(openet.rename(columns={"date": "month"})[["site", "month"]], on=["site", "month"])
     zone, season = sm["site"].map({s: p[2] for s, p in periods.items()}), sm["month"].dt.month.map(rec.SEASON)

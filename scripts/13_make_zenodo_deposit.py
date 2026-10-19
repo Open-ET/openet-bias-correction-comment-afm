@@ -27,7 +27,11 @@ paper/ and .env.
 The inputs of every archive are checked first: folders present, the figures,
 QC overlays and site plots complete, a FILE_NOTES entry for every results file
 (and every non-optional entry present), no e-mail addresses in the text files
-of the data archives.  A problem stops the script before anything is written.
+of the data archives, and the joint OpenET disclosure check of scripts/14
+passed on the current files (its record, DISCLOSURE_RECORD, complete, passed,
+covering every OpenET-derived results file, every file it read unchanged;
+--no-disclosure-check skips this, e.g. to rebuild from an unzipped deposit
+without the OpenET extracts).  A problem stops the script before anything is written.
 The archives are then built in a temporary folder next to --out and moved into
 place at the end, so a failure leaves an existing deposit as it was; zips of an
 earlier build that the new one does not replace (another version) are deleted
@@ -40,12 +44,13 @@ records both) gives the same md5 sums, since zlib's deflate output can differ
 between versions.  Run it after the pipeline (README.md, Pipeline).
 
 Usage:
-  python scripts/13_make_zenodo_deposit.py [--out zenodo] [--version 1.0.0]
+  python scripts/13_make_zenodo_deposit.py [--out zenodo] [--version 1.0.0] [--no-disclosure-check]
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import re
@@ -80,7 +85,9 @@ FOLDERS = {
     "results.zip": ("results", "derived tables (CSV, JSON) of scripts 02 (Earth Engine ETo check) and 04-12, with "
                                "README.txt, a one-line guide to every file",
                     "CC BY 4.0, except OpenET-derived statistics (OpenET Terms of Service)"),
-    "figures.zip": ("figures", "Figs. 1-5 of the comment (PNG 600 dpi, PDF) and QC overlays of the digitization",
+    "figures.zip": ("figures", "Figure 1 of the comment (fig_table1_reconstruction: GO26 Table 1 against the site "
+                               "means rebuilt from BASE; scripts/08), further figures of the analysis (fig1-fig5) "
+                               "(PNG 600 dpi, PDF), and QC overlays of the digitization",
                     "CC BY 4.0, except Fig. 2b-d (OpenET-derived: OpenET Terms of Service)"),
     "benchmark_site_plots.zip": (
         "benchmark_site_plots", "plots of the seven towers shared with GO26 from the Volk et al. (2023c) benchmark, "
@@ -166,13 +173,17 @@ FILE_NOTES = {
         "scripts/10: per GO26 tower: BASE file, version and DOI, columns used (one net radiometer; the other in "
         "*_netrad_alt), first and last valid LE and last record, valid and energy-balance days, site means of the "
         "zero-filled sums (over calendar days and over the days in the file), of valid-day ET (mean of valid "
-        "records, and gap-filled by the mean diurnal variation, *_mdv) and of EBR, screened and unscreened "
-        "Bowen-ratio closed ET, Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 "
+        "records, and gap-filled by the mean diurnal variation, *_mdv), of Bowen-ratio closed ET as GO26 state it "
+        "(flux-data-qaqc's 'br' correction; unfilled *_br_fdq, gap-filled *_br_fdq_mdv) and of EBR, screened and "
+        "unscreened Bowen-ratio closed ET, "
+        "Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 "
         "(diff_*), implied zero fractions; *_qc: LE flagged 2 in LE_SSITC_TEST removed (AmeriFlux BASE derivative)",
     "go26_reconstructed_daily.csv":
         "scripts/10: per tower and day: shares of records with LE and with all energy-balance terms, valid-day ET "
-        "(unfilled and gap-filled), Bowen-ratio, screened and EBR closure factors, EBR, screened and unscreened "
-        "Bowen-ratio closed ET, zero-filled sums, flags (*_qc variants); '#' header with definitions and the site "
+        "(unfilled and gap-filled), Bowen-ratio, screened and EBR closure factors, Bowen-ratio closed ET as GO26 "
+        "state it (et_br_fdq; gap-filled et_br_fdq_mdv), EBR, screened and unscreened Bowen-ratio closed ET, "
+        "zero-filled sums, flags (*_qc "
+        "variants); '#' header with definitions and the site "
         "BASE DOIs (AmeriFlux BASE derivative)",
     "go26_reconstructed_figure_check.csv":
         "scripts/10: GO26's plotted daily observed ET (Figs. 8 and S2, digitized) against the BASE zero-filled daily "
@@ -180,13 +191,16 @@ FILE_NOTES = {
         "than half of the records or without LE, exact-zero days (AmeriFlux BASE derivative)",
     "go26_reconstructed_openet_bias.csv":
         "scripts/10: OpenET ensemble minus observed ET rebuilt from BASE by GO26 zone and season: zero-filled Table 1 "
-        "sums over all site-months with OpenET (next to GO26's reported bias) and, on identical site-months with >= "
-        "20 valid days, zero-filled, gap-filled unclosed, EBR and screened Bowen-ratio closed ET; OpenET values "
+        "sums over all site-months with OpenET (next to GO26's reported bias) and, on identical days and "
+        "site-months (>= 20 valid days with all energy-balance terms), zero-filled ET, GO26's processing as they "
+        "state it (valid-day and Bowen-ratio closed ET), and gap-filled ET unclosed and closed with the Bowen ratio as "
+        "GO26 state it, EBR or the screened Bowen ratio; OpenET values "
         "withheld where a single month or any sum or difference over fewer than 6 site-months could be solved for "
         "(OpenET-derived; observed ET: AmeriFlux BASE derivative)",
     "go26_reconstructed_winter.csv":
         "scripts/10: Dec-Feb means per tower (and January, February and January-February 2020 at US-UiC) of "
-        "unclosed (unfilled and gap-filled), EBR, screened and unscreened Bowen-ratio closed and zero-filled ET from "
+        "unclosed (unfilled and gap-filled), Bowen-ratio closed as GO26 state it, EBR, screened and unscreened "
+        "Bowen-ratio closed and zero-filled ET from "
         "BASE and Bowen-ratio failure counts, with GO26 Fig. 8 (AmeriFlux BASE derivative)",
     "leakage_experiment.csv":
         "scripts/07: XGBoost correction of OpenET Phase II at 38 benchmark cropland stations: RMSE, MBE and gain "
@@ -270,6 +284,11 @@ go26_reconstructed_daily.csv) with any of
   go26_reconstructed_winter.csv
 """
 
+# record of the joint OpenET disclosure check (scripts/14; local, not deposited) and the results it must cover
+DISCLOSURE_RECORD = "data/raw/openet_api/derived/disclosure_check.json"
+OPENET_RESULTS = ("results/openet_api_", "results/go26_reconstructed_openet_bias.csv")
+NO_OPENET_VALUES = ("results/openet_api_uic_winter.csv",)  # named like them, but holds no OpenET values
+
 # the code snapshot outside a git checkout (e.g. an unzipped deposit): what .gitignore lets git track
 CODE_DIRS = (".github", "scripts", "src", "tests")
 CODE_FILES = (".gitignore", "CITATION.cff", "LICENSE", "LICENSE-data.md", "README.md", "data/README.md",
@@ -349,13 +368,36 @@ def site_plot_entries(problems: list[str]) -> list[tuple[str, Path | bytes]]:
     return entries + [("benchmark_site_plots/README.txt", BENCHMARK_README.encode())]
 
 
-def collect(version: str, exclude=()) -> list[tuple[str, list[tuple[str, Path | bytes]], str, str]]:
+def disclosure_problems() -> list[str]:
+    """Why the record of scripts/14 does not cover the current files ([] if it does)."""
+    rec = ROOT / DISCLOSURE_RECORD
+    run = "run scripts/14_check_openet_disclosure.py (needs the OpenET extracts), or pass --no-disclosure-check"
+    if not rec.is_file():
+        return [f"{DISCLOSURE_RECORD} not found: {run}"]
+    r = json.loads(rec.read_text())
+    if not (r.get("passed") and r.get("complete")):
+        return [f"the joint OpenET disclosure check in {DISCLOSURE_RECORD} "
+                f"{'failed' if not r.get('passed') else 'was partial (--families or --no-controls)'}: {run}"]
+    files = r.get("files", {})
+    changed = [f for f, h in files.items() if not (ROOT / f).is_file() or md5(ROOT / f) != h]
+    openet = [p.relative_to(ROOT).as_posix() for p in sorted((ROOT / "results").glob("*")) if p.is_file()]
+    uncovered = [f for f in openet if f.startswith(OPENET_RESULTS) and f not in NO_OPENET_VALUES and f not in files]
+    out = []
+    if changed:
+        out.append(f"changed since the joint OpenET disclosure check: {', '.join(changed)}: {run}")
+    if uncovered:
+        out.append(f"OpenET-derived files the joint disclosure check did not read: {', '.join(uncovered)}: add "
+                   f"them to scripts/14")
+    return out
+
+
+def collect(version: str, exclude=(), disclosure: bool = True) -> list[tuple[str, list[tuple[str, Path | bytes]], str, str]]:
     """Every archive as (name, entries, contents, licence), entries as (name in the zip, file or bytes).
 
     Checks all inputs first and raises DepositError listing every problem, so that nothing is written (and an
-    existing deposit is kept) when one is missing or incomplete.
+    existing deposit is kept) when one is missing or incomplete; ``disclosure`` includes the record of scripts/14.
     """
-    problems: list[str] = []
+    problems: list[str] = disclosure_problems() if disclosure else []
     files = code_files(exclude)
     code = f"{NAME}-{version}.zip"
     if not any(f.startswith("scripts/") for f in files):
@@ -514,7 +556,9 @@ Every archive except `{code}` holds paths relative to the repository root.
 Verify the downloads with `md5sum -c MD5SUMS` (Linux) or `md5 -r *.zip` (macOS; compare with
 `MD5SUMS`). The zips are deterministic: `scripts/13_make_zenodo_deposit.py` rebuilds them with
 the same md5 sums from unchanged files with the same Python and zlib (`environment.yml`; built
-with {built}), since zlib's compressed output can differ between versions.
+with {built}), since zlib's compressed output can differ between versions. Without the OpenET
+extracts, pass `--no-disclosure-check`: before building, the script requires the record of the
+joint OpenET disclosure check (`scripts/14`), which needs them.
 
 ## How to use
 
@@ -562,7 +606,8 @@ with {built}), since zlib's compressed output can differ between versions.
   `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_daily.csv`,
   `results/go26_reconstructed_figure_check.csv`, `results/go26_reconstructed_winter.csv`, and the
   observed ET of `results/go26_reconstructed_openet_bias.csv`, whose OpenET values are
-  OpenET-derived): CC BY 4.0 under the AmeriFlux CC-BY-4.0 data policy; cite each site's BASE DOI
+  OpenET-derived; the Table 1 figure, `figures/fig_table1_reconstruction.*`): CC BY 4.0 under
+  the AmeriFlux CC-BY-4.0 data policy; cite each site's BASE DOI
   (`config/go26_sites.csv`; also in the `base_doi` column of
   `results/go26_observed_et_reconstruction.csv` and the header of the daily file).
 - AmeriFlux public metadata (`data/raw/ameriflux_public/`): AmeriFlux content; the metadata are
@@ -609,7 +654,7 @@ def install(tmp: Path, out: Path) -> None:
         os.replace(tmp / name, out / name)
 
 
-def build(out: Path, version: str) -> list[tuple[str, str, int, str, str]]:
+def build(out: Path, version: str, disclosure: bool = True) -> list[tuple[str, str, int, str, str]]:
     """Check the inputs, build the deposit in a temporary folder next to ``out`` and move it into place.
 
     Returns the rows of the README table (name, contents, size, licence, md5).  Raises DepositError, with
@@ -617,7 +662,7 @@ def build(out: Path, version: str) -> list[tuple[str, str, int, str, str]]:
     """
     out = out.resolve()
     tmp = out.parent / f".{out.name}.building"
-    archives = collect(version, exclude=(out, tmp))
+    archives = collect(version, exclude=(out, tmp), disclosure=disclosure)
     if tmp.exists():
         shutil.rmtree(tmp)  # left over from an interrupted build
     tmp.mkdir(parents=True)
@@ -638,9 +683,13 @@ def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n", 1)[0])
     ap.add_argument("--out", default=str(ROOT / "zenodo"))
     ap.add_argument("--version", default="1.0.0")
+    ap.add_argument("--no-disclosure-check", action="store_true",
+                    help="build without the record of scripts/14 (e.g. from an unzipped deposit); not for upload")
     args = ap.parse_args(argv)
+    if args.no_disclosure_check:
+        print("WARNING: --no-disclosure-check: the joint OpenET disclosure check (scripts/14) was not verified")
     try:
-        rows = build(Path(args.out), args.version)
+        rows = build(Path(args.out), args.version, disclosure=not args.no_disclosure_check)
     except DepositError as err:
         raise SystemExit(f"STOPPED: {err}\nNothing was written; {args.out} is unchanged.") from None
     for n, _, size, _, h in rows:

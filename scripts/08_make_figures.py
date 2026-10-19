@@ -24,8 +24,11 @@ Table 1 figure (fig_table1_*; not yet numbered in the comment): GO26 Table 1 mea
             with at least half of them (GO26's stated 50% filter), over those days;
         (c) gaps filled: as (b), with the missing half-hours of those days filled
             from the mean diurnal cycle of a centred 15-day window;
-        (d) as (c), closed with the screened Bowen-ratio factor (GO26's stated
-            method, Twine et al., 2000; scripts/10); (a)-(c) have no closure.
+        (d) as (c), closed with the Bowen-ratio method as GO26 state it (Twine et
+            al., 2000), applied as flux-data-qaqc's 'br' correction: the day's
+            factor, unscreened, on days with the energy-balance terms, leaving out
+            days whose closed LE is <= -100 or >= 850 W m-2 (scripts/10);
+            (a)-(c) have no closure.
 
 Inputs: results/digitized_US-UTJ.csv, results/digitized_summary.json (scripts/04),
 config/go26_sites.csv, results/ameriflux_le_availability.csv (scripts/11),
@@ -89,7 +92,7 @@ TABLE1_SERIES = {  # column of scripts/10 (one panel each): marker face, panel t
     "mean_et_hh_sum_zero_filled_unclosed": (st.ORANGE, "Missing values set to zero"),
     "mean_et_unclosed_valid": (st.BLUE, "Missing values excluded"),
     "mean_et_unclosed_mdv": (st.AQUA, "Missing values gap-filled"),
-    "mean_et_br_screened_mdv": (st.INK, "Gap-filled and closure-corrected"),
+    "mean_et_br_fdq_mdv": (st.INK, "Gap-filled and closure-corrected"),
 }
 TABLE1_TOL = 0.04  # mm/d; Table 1 is rounded to 0.01 mm/d
 # sites labelled in the zero-filled panel (outside TABLE1_TOL): label position (mm/d) and alignment
