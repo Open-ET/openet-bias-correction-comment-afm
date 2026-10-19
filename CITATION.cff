@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this code or the derived data, please cite the comment and the datasets it builds on."
-title: "Code and data for: Comment on Golkar and de Oliveira (2026): Exact-zero observed evapotranspiration undermines the diagnosis of OpenET bias"
+title: "Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET biases"
 type: software
 license: MIT
 version: 1.0.0
@@ -47,6 +47,28 @@ references:
     start: 111524
     year: 2026
     doi: 10.1016/j.agrformet.2026.111524
+  - type: article
+    authors:
+      - family-names: Volk
+        given-names: John M.
+      - family-names: Huntington
+        given-names: Justin L.
+      - family-names: Allen
+        given-names: Richard G.
+      - family-names: Melton
+        given-names: Forrest S.
+      - family-names: Anderson
+        given-names: Martha C.
+      - family-names: Kilic
+        given-names: Ayse
+    title: "flux-data-qaqc: A Python package for energy balance closure and post-processing of eddy flux data"
+    journal: Journal of Open Source Software
+    volume: 6
+    issue: "66"
+    start: 3418
+    year: 2021
+    doi: 10.21105/joss.03418
+    notes: "Software version 0.5.0 is used for the energy balance closure."
   - type: data
     authors:
       - family-names: Volk

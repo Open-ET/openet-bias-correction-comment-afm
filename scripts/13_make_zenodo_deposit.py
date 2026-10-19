@@ -11,7 +11,7 @@ md5 sums) and MD5SUMS:
   data_raw_ameriflux_public.zip                      cached public AmeriFlux metadata (scripts/11)
   results.zip                                        derived results, with results/README.txt, a
                                                      guide to every file (FILE_NOTES below)
-  figures.zip                                        figures of the comment, QC overlays
+  figures.zip                                        Figure 1 of the comment, further figures, QC overlays
   benchmark_site_plots.zip                           benchmark plots of the seven shared towers:
                                                      figures/site_plots/html/ and static/ (scripts/03)
                                                      as benchmark_site_plots/html/ and static/, with
@@ -88,7 +88,7 @@ FOLDERS = {
     "figures.zip": ("figures", "Figure 1 of the comment (fig_table1_reconstruction: GO26 Table 1 against the site "
                                "means rebuilt from BASE; scripts/08), further figures of the analysis (fig1-fig5) "
                                "(PNG 600 dpi, PDF), and QC overlays of the digitization",
-                    "CC BY 4.0, except Fig. 2b-d (OpenET-derived: OpenET Terms of Service)"),
+                    "CC BY 4.0, except panels b-d of fig2 (OpenET-derived: OpenET Terms of Service)"),
     "benchmark_site_plots.zip": (
         "benchmark_site_plots", "plots of the seven towers shared with GO26 from the Volk et al. (2023c) benchmark, "
                                 "built from `figures/site_plots/` (scripts/03): the benchmark's Bokeh pages (`html/`) "
@@ -511,7 +511,7 @@ def readme(version: str, rows: list[tuple[str, str, int, str, str]]) -> str:
     table = "\n".join(f"| `{n}` | {c} | {human(size)} | {lic} | `{h}` |" for n, c, size, lic, h in rows)
     code = rows[0][0]
     built = f"Python {platform.python_version()}, zlib {zlib.ZLIB_RUNTIME_VERSION}"
-    return f"""# Code and data for: Comment on Golkar and de Oliveira (2026): Exact-zero observed evapotranspiration undermines the diagnosis of OpenET bias
+    return f"""# Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET biases
 
 Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: https://github.com/montimaj/{NAME}
 
@@ -520,8 +520,8 @@ Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: https://github.
 
 ## Description
 
-Reproducible analysis for the comment *Comment on Golkar and de Oliveira (2026): Exact-zero
-observed evapotranspiration undermines the diagnosis of OpenET bias* (Kim et al., submitted to
+Reproducible analysis for the comment *Comment on Golkar and de Oliveira (2026): Missing eddy
+covariance observations undermine reported OpenET biases* (Kim et al., submitted to
 *Agricultural and Forest Meteorology*) on Golkar, M.K., de Oliveira, L.A., 2026, Diagnosing and
 correcting OpenET satellite evapotranspiration across US climate zones, *Agric. For. Meteorol.*
 391, 111524, https://doi.org/10.1016/j.agrformet.2026.111524 (GO26, CC BY 4.0).
@@ -531,7 +531,7 @@ The deposit holds the code (a snapshot of the GitHub repository) and its inputs 
 digitized GO26 figures, the comparison with the Volk et al. (2023a) benchmark, AmeriFlux's public
 data-availability records, observed ET rebuilt from the AmeriFlux BASE files of GO26's 22 towers,
 the current OpenET collection at GO26's towers and the benchmark cropland stations, a train/test
-leakage experiment, and the figures of the comment.
+leakage experiment, Figure 1 of the comment and the further figures of the analysis.
 
 Data dates (UTC, from the provenance files):
 
@@ -579,7 +579,7 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
      collections, so a new extraction can differ slightly; if the md5 sums of the raw extracts
      match those recorded in `results/openet_api_go26_summary.json` (`provenance`: `md5_openet_monthly.csv`,
      `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*`
-     and Fig. 2 are reproduced exactly;
+     and `figures/fig2_*` are reproduced exactly;
    - optionally, AmeriFlux BASE files for `scripts/10` (AmeriFlux account; the versions GO26 cite
      are in `config/go26_sites.csv`); without them skip `scripts/10`, which would otherwise
      overwrite `results/go26_observed_et_reconstruction.csv` with status rows.
@@ -599,14 +599,14 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
 - `benchmark_site_plots/`: CC BY 4.0; `html/` are the Bokeh pages of Volk et al. (2023c),
   unchanged; `static/` is this work.
 - OpenET-derived statistics (`results/openet_api_*`, `results/go26_reconstructed_openet_bias.csv`,
-  Fig. 2b-d): OpenET data, subject to the OpenET Terms of Service
+  panels b-d of `figures/fig2_*`): OpenET data, subject to the OpenET Terms of Service
   (https://etdata.org/terms-of-service/); attribute "OpenET, https://openetdata.org" wherever they
   are shown. They are not covered by CC BY 4.0.
 - AmeriFlux BASE derivatives (`results/go26_base_version_check.csv`,
   `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_daily.csv`,
   `results/go26_reconstructed_figure_check.csv`, `results/go26_reconstructed_winter.csv`, and the
   observed ET of `results/go26_reconstructed_openet_bias.csv`, whose OpenET values are
-  OpenET-derived; the Table 1 figure, `figures/fig_table1_reconstruction.*`): CC BY 4.0 under
+  OpenET-derived; Figure 1 of the comment, `figures/fig_table1_reconstruction.*`): CC BY 4.0 under
   the AmeriFlux CC-BY-4.0 data policy; cite each site's BASE DOI
   (`config/go26_sites.csv`; also in the `base_doi` column of
   `results/go26_observed_et_reconstruction.csv` and the header of the daily file).
@@ -625,7 +625,8 @@ Science.
 
 Please cite this deposit (`CITATION.cff` in the code archive), the comment once published, GO26,
 Volk et al. (2023a, 2023c, 2023d, 2024), Volk et al. (2026) for the bias-corrected gridMET reference
-ET, OpenET (Melton et al., 2022), and the AmeriFlux BASE DOIs of the sites
+ET, flux-data-qaqc (Volk et al., 2021; version 0.5.0) for the energy balance closure, OpenET (Melton
+et al., 2022), and the AmeriFlux BASE DOIs of the sites
 (`config/go26_sites.csv`).
 
 ## Related identifiers
@@ -633,12 +634,17 @@ ET, OpenET (Melton et al., 2022), and the AmeriFlux BASE DOIs of the sites
 - Comment on: https://doi.org/10.1016/j.agrformet.2026.111524
 - Source code: https://github.com/montimaj/{NAME}
 - Data used: https://doi.org/10.5281/zenodo.7636781, https://doi.org/10.5281/zenodo.10119477
-- References: https://doi.org/10.1038/s44221-023-00181-7, https://doi.org/10.1016/j.agwat.2026.110647
+- References: https://doi.org/10.1038/s44221-023-00181-7, https://doi.org/10.1016/j.agwat.2026.110647,
+  https://doi.org/10.21105/joss.03418
 
 ## Use of AI tools
 
-The analysis code, figures and the first draft of the comment were prepared with the help of
-Claude (Anthropic). The authors reviewed the code and its results and take responsibility for them.
+The authors identified potential methodological issues in the original study and used Claude
+(Anthropic) to assist in developing and refining code to investigate these issues and
+independently reproduce the reported results. All code, analyses, and interpretations were
+reviewed and verified by the authors, who retain full responsibility for the findings and
+conclusions. The analysis code is publicly available on GitHub to support transparency and
+reproducibility.
 """
 
 

@@ -12,8 +12,8 @@
 Code for the comment
 
 > Kim, Y., Majumdar, S., Volk, J.M., ReVelle, P., Caldwell, T.G., Huntington, J.L.
-> *Comment on Golkar and de Oliveira (2026): Exact-zero observed evapotranspiration
-> undermines the diagnosis of OpenET bias.* Submitted to *Agricultural and Forest Meteorology*.
+> *Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine
+> reported OpenET biases.* Submitted to *Agricultural and Forest Meteorology*.
 
 on
 
@@ -39,10 +39,10 @@ which are not tracked in git:
 | Folder | Contents |
 |---|---|
 | `config/` | GO26 Table 1 (sites, study periods, mean observed ET, BASE DOIs and versions) and Table 3, site notes, the Volk et al. (2024) station list |
-| `data/external/golkar_deoliveira_2026/` | GO26 Figs. 8 and S2 (CC BY 4.0), digitized by `scripts/04`, and Fig. 2, kept for the visual check in Section 2.1 of the comment |
+| `data/external/golkar_deoliveira_2026/` | GO26 Figs. 8 and S2 (CC BY 4.0), digitized by `scripts/04`, and Fig. 2, kept for the visual check of its zero-valued observations (Section 1 of the comment) |
 | `data/raw/ameriflux_public/` | cached public AmeriFlux metadata read by `scripts/11` (site pages and web-service responses change over time; the site pages without the site teams' e-mail addresses) |
 | `results/` | derived tables (CSV, JSON) of scripts 02 (Earth Engine ETo check) and 04-12; in the deposit with `results/README.txt`, a one-line guide to every file |
-| `figures/` | Figs. 1-5 of the comment and the QC overlays of the digitization (without `figures/site_plots/`, which is deposited as `benchmark_site_plots/`) |
+| `figures/` | Figure 1 of the comment (`fig_table1_reconstruction.*`), the further figures of the analysis (`fig1_*` to `fig5_*`) and the QC overlays of the digitization (without `figures/site_plots/`, which is deposited as `benchmark_site_plots/`) |
 | `benchmark_site_plots/` | benchmark plots for the seven towers shared with GO26: the benchmark's Bokeh pages (`html/`) and static summaries (`static/`). `scripts/03` writes them to `figures/site_plots/html/` and `static/`; `scripts/13` packs them, with a README.txt, as `benchmark_site_plots/` |
 
 `scripts/13_make_zenodo_deposit.py` builds the deposit in `zenodo/` (gitignored): one zip per
@@ -74,9 +74,9 @@ python -m pytest -q                   # unit tests on synthetic data: offline, a
 ```
 
 Without conda, `python -m pip install -e ".[dev]"` installs the package with mostly unpinned
-dependencies (`kgcpy` and `basemap-data` are pinned; Python 3.11 or later; CI tests Python 3.11
-and 3.12 with the latest versions). The `ee`
-extra (`".[dev,ee]"`) adds `earthengine-api` for the optional Earth Engine check of ETo.
+dependencies (`fluxdataqaqc`, `kgcpy` and `basemap-data` are pinned; Python 3.11 or later; CI
+tests Python 3.11 and 3.12 with the latest versions). The `ee` extra (`".[dev,ee]"`) adds
+`earthengine-api` for the optional Earth Engine check of ETo.
 
 `scripts/03` renders PNG snapshots of the benchmark's Bokeh pages with Playwright: run
 `python -m playwright install chromium` once, or pass `--no-render`. The pages load
@@ -131,21 +131,20 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   https://openetdata.org") wherever values are shown. The raw extracts stay in `data/raw/`;
   the OpenET values in `results/` are statistics over study periods, seasons, climate
   classes and stations, apart from GO26's own plotted OpenET line in `results/digitized_*`
-  (digitized from their CC BY 4.0 Figs. 8 and S2). Before writing, `scripts/12` and `scripts/10` each check that no single monthly or
-  daily OpenET value, and no sum or difference over fewer than six site-months, can be
-  solved for from their outputs and the public data, and they withhold what would allow it:
-  small
-  stations; the MBE per day of single stations and of the six models' strata; the seasonal
-  rows of US-xSL and of the seven shared towers pooled; the per-tower zero-fill predictions
-  and daily-based means; and some zone-by-season rows of
-  `results/go26_reconstructed_openet_bias.csv`. `scripts/14` then checks all their published
-  numbers together (rebuilt as linear functionals of the raw extracts and validated against
-  the published values; nonlinear statistics through their gradients; an exact search for
-  combinations of fewer than six site-months, with positive controls), and `scripts/13`
-  builds the deposit only from files that passed it. The tables with OpenET values (the full
-  per-tower table, the GO26 figure check by day set and month, the benchmark station-months
-  and the US-UiC winter comparison) are written to `data/raw/openet_api/derived/` and are
-  not deposited.
+  (digitized from their CC BY 4.0 Figs. 8 and S2). Before writing, `scripts/12` and
+  `scripts/10` each check that no single monthly or daily OpenET value, and no sum or
+  difference over fewer than six site-months, can be solved for from their outputs and the
+  public data, and they withhold what would allow it: small stations; the MBE per day of
+  single stations and of the six models' strata; the seasonal rows of US-xSL and of the seven
+  shared towers pooled; the per-tower zero-fill predictions and daily-based means; and some
+  zone-by-season rows of `results/go26_reconstructed_openet_bias.csv`. `scripts/14` then
+  checks all their published numbers together (rebuilt as linear functionals of the raw
+  extracts and validated against the published values; nonlinear statistics through their
+  gradients; an exact search for combinations of fewer than six site-months, with positive
+  controls), and `scripts/13` builds the deposit only from files that passed it. The tables
+  with OpenET values (the full per-tower table, the GO26 figure check by day set and month,
+  the benchmark station-months and the US-UiC winter comparison) are written to
+  `data/raw/openet_api/derived/` and are not deposited.
 
 ### AmeriFlux (streams 3 and 4)
 
@@ -179,19 +178,18 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
 * The script writes GO26's Table 1 as reproduced (half-hourly ET summed with missing records
   and days counted as zero, over calendar days, no closure), valid-day means with missing
   records filled from the mean diurnal cycle, energy-balance closure by flux-data-qaqc
-  (version 0.5.0, pinned in `environment.yml`; run on the daily means of LE, H, NETRAD and G
-  over the half-hours in which all four are valid, its daily factor multiplying the daily LE:
-  the Bowen-ratio method as GO26 state it, flux-data-qaqc's `br` correction, unscreened, on
-  the valid-day means and on the gap-filled ones; its `ebr` correction as the main variant;
-  our screened Bowen ratio; the unscreened Bowen ratio on every day only as a diagnostic),
-  a comparison of
-  the cited files with AmeriFlux's October 2025 availability
-  summary (the `scripts/11` cache), a day-by-day check of GO26's Figs. 8 and S2 (digitized by
-  `scripts/04`) and, with the OpenET monthly extract (`scripts/02`), the OpenET bias by
-  climate zone and season. GO26 also kept only records passing the AmeriFlux quality flags:
-  `--qc-flags` adds columns `*_qc` without the LE records flagged 2 in `LE_SSITC_TEST`. The
-  default uses every record, which reproduces Table 1; `results/go26_*` were written with
-  `--qc-flags`.
+  (Volk et al., 2021; version 0.5.0, pinned in `environment.yml`; run on the daily means of
+  LE, H, NETRAD and G over the half-hours in which all four are valid, its daily factor
+  multiplying the daily LE: the Bowen-ratio method as GO26 state it, flux-data-qaqc's `br`
+  correction, unscreened, on the valid-day means and on the gap-filled ones; its `ebr`
+  correction as the main variant; our screened Bowen ratio; the unscreened Bowen ratio on
+  every day only as a diagnostic), a comparison of the cited files with AmeriFlux's October
+  2025 availability summary (the `scripts/11` cache), a day-by-day check of GO26's Figs. 8
+  and S2 (digitized by `scripts/04`) and, with the OpenET monthly extract (`scripts/02`), the
+  OpenET bias by climate zone and season. GO26 also kept only records passing the AmeriFlux
+  quality flags: `--qc-flags` adds columns `*_qc` without the LE records flagged 2 in
+  `LE_SSITC_TEST`. The default uses every record, which reproduces Table 1; `results/go26_*`
+  were written with `--qc-flags`.
 * Without BASE files the script reports "BASE file not found" for each site but still
   rewrites `results/go26_observed_et_reconstruction.csv` (status rows only), so do not run
   it in a copy of the deposit that lacks the BASE files.
@@ -206,10 +204,11 @@ visual check of the zero stripe in its scatter plot.
 ## Pipeline
 
 Run the scripts from the repository root in numeric order, except that `10`, `11` and `12`
-must run before `08` (Fig. 2 uses their outputs), `11` before `10` (`10` reads the
-availability summary cached by `11`) and `14` before `13` (`13` requires the record of the
-joint disclosure check). Without the BASE files, skip `10` and keep the
-deposited `results/go26_*`. Times are for a recent laptop with the inputs in place.
+must run before `08` (`figures/fig2_*` uses their outputs, Figure 1 of the comment those of
+`10`), `11` before `10` (`10` reads the availability summary cached by `11`) and `14` before
+`13` (`13` requires the record of the joint disclosure check). Without the BASE files, skip
+`10` and keep the deposited `results/go26_*`. Times are for a recent laptop with the inputs
+in place.
 
 | Script | Needs | Writes | Time |
 |---|---|---|---|
@@ -220,9 +219,9 @@ deposited `results/go26_*`. Times are for a recent laptop with the inputs in pla
 | `05_benchmark_checks.py` | benchmark, OpenET Phase II | `results/benchmark_*.csv` | seconds |
 | `06_shared_site_comparison.py` | benchmark, OpenET Phase II, `config/` | `results/shared_site_*.csv`, `figures/fig4_*`, `figures/fig5_*` | seconds |
 | `07_leakage_experiment.py` | benchmark, OpenET Phase II | `results/leakage_experiment*` | about 10 min (two meteorology variants) |
-| `08_make_figures.py` | outputs of 04, 11 and 12, and of 10 for the GO26-tower markers in Fig. 2d and the Table 1 figure; `config/` | `figures/fig1_*`, `figures/fig2_*`, `figures/fig_table1_*` (GO26 Table 1 against the site means rebuilt from BASE) | seconds |
+| `08_make_figures.py` | outputs of 04, 11 and 12, and of 10 for the GO26-tower markers in `fig2_*` and for Figure 1 of the comment; `config/` | `figures/fig1_*`, `figures/fig2_*`, `figures/fig_table1_*` (Figure 1 of the comment: GO26 Table 1 against the site means rebuilt from BASE) | seconds |
 | `09_make_maps.py` | `config/` | `figures/fig3_site_map.*`, `results/site_koppen_check.csv` | seconds |
-| `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 20 s |
+| `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 12 min (flux-data-qaqc runs for every site, closure and variant) |
 | `11_ameriflux_availability.py` | internet on the first run, `config/` | `data/raw/ameriflux_public/`, `results/ameriflux_*` | seconds |
 | `12_openet_api_analysis.py` | outputs of 02, 04, 06 and 11; benchmark; `config/` | `results/openet_api_*`, `data/raw/openet_api/derived/` | seconds |
 | `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/`, the record of 14 (`--no-disclosure-check` without it) | `zenodo/` (archives, README.md, MD5SUMS) | seconds |
@@ -271,8 +270,8 @@ python scripts/13_make_zenodo_deposit.py              # package the Zenodo depos
   call; the cache makes reruns use the same extract. OpenET revises its collections, so a
   new extraction can differ slightly; if the md5 sums of the raw extracts match those
   recorded in `results/openet_api_go26_summary.json` (`provenance`: `openet_monthly.csv`,
-  `openet_daily.csv`, `sites.csv`, `sites_200m.geojson`), `results/openet_api_*` and Fig. 2
-  are reproduced exactly.
+  `openet_daily.csv`, `sites.csv`, `sites_200m.geojson`), `results/openet_api_*` and
+  `figures/fig2_*` are reproduced exactly.
 * Deposit: `scripts/13` writes deterministic zips; a rebuild from unchanged files gives the
   same md5 sums with the same Python and zlib (`environment.yml`; the deposit README records
   the versions used).
@@ -310,9 +309,9 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
   sums within 0.02 mm/day on 360 of 361 days, including 79 days with fewer than half of the
   records; the 4 plotted days without LE are exact zeros. At US-UTJ in 2024 all 206
   exact-zero days are days without a single LE record in the cited file, and 11 plotted
-  non-zero days have no LE in it (consistent with GO26 having processed an earlier version). The first BASE LE record
-  is from 5 June 2024 at US-UTJ (GO26's zero run ends on 4 June) and from 25 May,
-  5 September and 27 September 2023 at US-UTD, US-NSb and US-UTV.
+  non-zero days have no LE in it (consistent with GO26 having processed an earlier version).
+  The first BASE LE record is from 5 June 2024 at US-UTJ (GO26's zero run ends on 4 June) and
+  from 25 May, 5 September and 27 September 2023 at US-UTD, US-NSb and US-UTV.
 * **Valid days and closure** (`go26_observed_et_reconstruction.csv`,
   `go26_reconstructed_daily.csv`). LE is missing mostly at night at some towers, so filling
   the missing records of valid days from the mean diurnal cycle lowers their means by
@@ -346,7 +345,7 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
   screened Bowen ratio (summer +1.10; +0.57 and -0.41; +0.77, -0.12, -0.14 and -0.13),
   against -0.22 mm/day at the benchmark croplands (below).
 
-**Seven towers shared with the Volk et al. (2023a) benchmark (`scripts/06`; Table 4, Figs. 4 and 5).**
+**Seven towers shared with the Volk et al. (2023a) benchmark (`scripts/06`; `results/shared_site_*`, `figures/fig4_*`, `fig5_*`).**
 
 * OpenET ensemble bias against measured EBR-closed ET: -0.07 to -0.58 mm/day on overpass
   days (all seven towers); -0.12 to -0.35 mm/day for months with at most five gap-filled
@@ -400,13 +399,13 @@ gains are 26%, 24%, 20% and 10%.
   against 215-281 mm/yr in GO26's Table 1.
 * **Current OpenET against the benchmark.** Against measured, closure-corrected EC (or
   weighing-lysimeter) ET at 36 benchmark cropland stations (550 months with at most five
-  gap-filled days, 2016-2022),
-  the collection 2.1 ensemble bias is -0.22 mm/day (-6.7 mm/month, R2 = 0.88): -0.05 in winter,
-  -0.35 in spring, -0.39 in summer and +0.00 in fall, where GO26 report +0.08, +0.41, +1.34
-  and +0.57. By class it is -0.34 (BSk), -0.13 (Cfa), -0.19 (Csa) and -0.21 mm/day (Dfa)
-  against GO26's +0.48 to +1.10. SIMS is the only model without a negative pooled bias
-  (+0.25 mm/month). On all measured days at the seven shared towers (2016-2020) the bias is -0.33
-  to +0.01 mm/day (pooled -0.23); against unclosed ET it is +0.09 to +0.44.
+  gap-filled days, 2016-2022), the collection 2.1 ensemble bias is -0.22 mm/day (-6.7
+  mm/month, R2 = 0.88): -0.05 in winter, -0.35 in spring, -0.39 in summer and +0.00 in fall,
+  where GO26 report +0.08, +0.41, +1.34 and +0.57. By class it is -0.34 (BSk), -0.13 (Cfa),
+  -0.19 (Csa) and -0.21 mm/day (Dfa) against GO26's +0.48 to +1.10. SIMS is the only model
+  without a negative pooled bias (+0.25 mm/month). On all measured days at the seven shared
+  towers (2016-2020) the bias is -0.33 to +0.01 mm/day (pooled -0.23); against unclosed ET it
+  is +0.09 to +0.44.
 * **Winter at US-UiC (GO26 Fig. 8).** GO26's January-February 2020 values (mean 0.75
   mm/day) are close to the benchmark's nearest cropland tower (US-Bo1, 10 km; 0.67 mm/day)
   and to the zero-filled, unclosed BASE sums (0.76 mm/day;
@@ -442,7 +441,8 @@ gains are 26%, 24%, 20% and 10%.
   https://openetdata.org" wherever values are shown. The raw extracts and the tables with
   OpenET values (`data/raw/openet_api/derived/`) are not redistributed; the derived
   statistics (`results/openet_api_*`, `results/go26_reconstructed_openet_bias.csv`) and the
-  figure panels that show them (Fig. 2b-d) are not covered by CC BY 4.0 (`LICENSE-data.md`).
+  figure panels that show them (panels b-d of `figures/fig2_*`) are not covered by CC BY 4.0
+  (`LICENSE-data.md`).
 * `data/external/golkar_deoliveira_2026/`: figures from GO26, CC BY 4.0, reproduced
   unchanged for re-analysis with attribution.
 * Benchmark flux data: Volk et al. (2023c), doi:10.5281/zenodo.7636781, CC BY 4.0.
@@ -467,9 +467,12 @@ gains are 26%, 24%, 20% and 10%.
 
 ## Use of AI tools
 
-The analysis code, figures and the first draft of the comment were prepared with the help
-of Claude (Anthropic). The authors reviewed the code and its results and take
-responsibility for them.
+The authors identified potential methodological issues in the original study and used Claude
+(Anthropic) to assist in developing and refining code to investigate these issues and
+independently reproduce the reported results. All code, analyses, and interpretations were
+reviewed and verified by the authors, who retain full responsibility for the findings and
+conclusions. The analysis code is publicly available on GitHub to support transparency and
+reproducibility.
 
 ## Citation
 
@@ -484,6 +487,9 @@ in `config/go26_sites.csv`).
 * Rubel, F., Brugger, K., Haslinger, K., Auer, I., 2017. The climate of the European Alps:
   shift of very high resolution Köppen-Geiger climate zones 1800-2100. Meteorol. Z. 26,
   115-125. https://doi.org/10.1127/metz/2016/0816
+* Volk, J.M., et al., 2021. flux-data-qaqc: a Python package for energy balance closure and
+  post-processing of eddy flux data. J. Open Source Softw. 6, 3418.
+  https://doi.org/10.21105/joss.03418 (version 0.5.0 is used)
 * Volk, J.M., et al., 2023a. Development of a benchmark eddy flux evapotranspiration
   dataset for evaluation of satellite-driven evapotranspiration models over the CONUS.
   Agric. For. Meteorol. 331, 109307. https://doi.org/10.1016/j.agrformet.2023.109307
