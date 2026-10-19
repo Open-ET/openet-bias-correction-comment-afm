@@ -31,20 +31,22 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
     precipitation at US-UiC and US-UTJ only).
   - `manifest.json`: request log (endpoint, file, status, UTC time). The API key is never
     written.
-  - `derived/` (written by `scripts/12_openet_api_analysis.py`; OpenET values, not
-    deposited): `go26_sites_full.csv` (the full per-tower table, with the zero-fill
-    predictions and daily-based means), `go26_figure_check_all.csv` and
+  - `derived/` (OpenET values, not deposited), written by
+    `scripts/12_openet_api_analysis.py`: `go26_sites_full.csv` (the full per-tower table,
+    with the zero-fill predictions and daily-based means), `go26_figure_check_all.csv` and
     `go26_figure_check_monthly.csv` (GO26's plotted OpenET line against the API daily
     ensemble, by day set and by month), `benchmark_station_months.csv` (benchmark
     station-months: measured closed ET and OpenET minus measured, ensemble and six models)
     and `uic_winter_openet.csv` (the US-UiC winter comparison with OpenET, ETo and
-    precipitation).
+    precipitation); and by `scripts/14_check_openet_disclosure.py`: `disclosure_check.json`
+    (the record of the joint OpenET disclosure check, which `scripts/13` requires before it
+    builds the deposit).
 
   The extracts used for the published numbers were made on 15 October 2026, 03:38-04:09
   UTC. OpenET revises its collections, so a new extraction can differ slightly; if the md5
   sums of `openet_monthly.csv`, `openet_daily.csv`, `sites.csv` and `sites_200m.geojson`
   match those recorded in `results/openet_api_go26_summary.json` (`provenance`),
-  `results/openet_api_*` and Fig. 2 are reproduced exactly.
+  `results/openet_api_*` and `figures/fig2_*` are reproduced exactly.
 
   ETo is OpenET's bias-corrected gridMET ETo (Volk et al., 2026); precipitation is
   gridMET. OpenET data are subject to the OpenET Terms of Service
@@ -85,8 +87,11 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
   --agree-policy` and `AMERIFLUX_USER_ID` and `AMERIFLUX_USER_EMAIL` set in the environment
   or in `.env` (it fetches the current versions; AmeriFlux logs each download). CC BY 4.0
   under the AmeriFlux CC-BY-4.0 data policy, but not redistributed here; cite each site's
-  BASE DOI (`config/go26_sites.csv`, column `base_doi`) and acknowledge: "Funding for the
-  AmeriFlux data portal was provided by the U.S. Department of Energy Office of Science."
+  BASE DOI (`config/go26_sites.csv`, column `base_doi`) and acknowledge the sites and the
+  funding of AmeriFlux data resources as AmeriFlux recommends: "We acknowledge the following
+  AmeriFlux sites for their data records: [the sites used]. In addition, funding for
+  AmeriFlux data resources was provided by the U.S. Department of Energy's Office of
+  Science."
 
 ## external/
 

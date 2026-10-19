@@ -66,6 +66,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "openet-bias-correction-comment-afm"
 DOI = "10.5281/zenodo.23383493"
+REPO_URL = f"https://github.com/Open-ET/{NAME}"
+TITLE = ("Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations "
+         "undermine reported OpenET biases")
 STAMP = (2026, 10, 15, 0, 0, 0)  # release date, used as every entry's timestamp
 SKIP = {".DS_Store", "__pycache__", ".ipynb_checkpoints", ".pytest_cache"}
 AFFILIATION = "Desert Research Institute, Reno, Nevada, USA"
@@ -509,13 +512,23 @@ def author_line(path: Path | None = None) -> str:
     return ", ".join(names)
 
 
+def deposit_citation(version: str, path: Path | None = None) -> str:
+    """This deposit as a reference: 'Family, I.I., ..., & Family, I. (year). Title (Version v) [dataset]. Zenodo. DOI',
+    with the authors of CITATION.cff (AUTHORS without it)."""
+    path = path or ROOT / "CITATION.cff"
+    names = [f"{a['family-names']}, " + "".join(f"{w[0]}." for w in re.split(r"[\s.]+", a.get("given-names", "")) if w)
+             for a in (citation_authors(path) if path.is_file() else []) if a.get("family-names")]
+    who = (", ".join(names[:-1]) + ", & " + names[-1] if len(names) > 1 else names[0]) if names else AUTHORS
+    return f"{who} ({STAMP[0]}). {TITLE} (Version {version}) [dataset]. Zenodo. https://doi.org/{DOI}"
+
+
 def readme(version: str, rows: list[tuple[str, str, int, str, str]]) -> str:
     table = "\n".join(f"| `{n}` | {c} | {human(size)} | {lic} | `{h}` |" for n, c, size, lic, h in rows)
     code = rows[0][0]
     built = f"Python {platform.python_version()}, zlib {zlib.ZLIB_RUNTIME_VERSION}"
-    return f"""# Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET biases
+    return f"""# {TITLE}
 
-Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: https://github.com/montimaj/{NAME}
+Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: {REPO_URL}
 
 {author_line()}
 ({AFFILIATION})
@@ -528,7 +541,7 @@ covariance observations undermine reported OpenET biases* (Kim et al., submitted
 correcting OpenET satellite evapotranspiration across US climate zones, *Agric. For. Meteorol.*
 391, 111524, https://doi.org/10.1016/j.agrformet.2026.111524 (GO26, CC BY 4.0).
 
-The comment shows that the observed eddy covariance ET used by GO26 counts missing data as zero.
+The comment shows that missing eddy covariance observations were effectively treated as zero ET in GO26.
 The deposit holds the code (a snapshot of the GitHub repository) and its inputs and outputs: the
 digitized GO26 figures, the comparison with the Volk et al. (2023a) benchmark, AmeriFlux's public
 data-availability records, observed ET rebuilt from the AmeriFlux BASE files of GO26's 22 towers,
@@ -617,17 +630,26 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
   addresses removed, for provenance. `results/ameriflux_*` derive from them (CC BY 4.0; attribute
   AmeriFlux and the site teams).
 - GO26 figures (`data/external/golkar_deoliveira_2026/`): CC BY 4.0, Golkar and de Oliveira (2026).
-- Acknowledgement asked for by the AmeriFlux CC-BY-4.0 data policy: funding for the AmeriFlux
-  data portal was provided by the U.S. Department of Energy Office of Science.
+- The AmeriFlux sites and the funding of AmeriFlux data resources are acknowledged below
+  (Acknowledgements), as the AmeriFlux CC-BY-4.0 data policy asks.
 
 ## Acknowledgements
 
 Funding provided by U.S. Geological Survey Water Resources Research Institute, OpenET Planning
-Phase III Grant G25AC00180-00.
+Phase III Grant G25AC00180-00. We acknowledge the following AmeriFlux sites for their data
+records: US-ARM, US-Bi1, US-Bi2, US-IAB, US-MN1, US-MN2, US-MN3, US-Mo1, US-NSb, US-Ne1,
+US-Ne2, US-Ne3, US-RGA, US-RGB, US-UTD, US-UTJ, US-UTV, US-UiC, US-UiG, US-VT1, US-WT1, and
+US-xSL. In addition, funding for AmeriFlux data resources was provided by the U.S. Department
+of Energy's Office of Science.
 
 ## Citation
 
-Please cite this deposit (`CITATION.cff` in the code archive), the comment once published, GO26,
+Please cite this deposit as
+
+{deposit_citation(version)}
+
+The code is also on GitHub, {REPO_URL}, of which the code archive is a snapshot (`CITATION.cff`
+there and in the archive). Please also cite the comment once published, GO26,
 Volk et al. (2023a, 2023c, 2023d, 2024), Volk et al. (2026) for the bias-corrected gridMET reference
 ET, flux-data-qaqc (Volk et al., 2021; version 0.5.0) for the energy balance closure, OpenET (Melton
 et al., 2022), and the AmeriFlux BASE DOIs of the sites
@@ -636,7 +658,7 @@ et al., 2022), and the AmeriFlux BASE DOIs of the sites
 ## Related identifiers
 
 - Comment on: https://doi.org/10.1016/j.agrformet.2026.111524
-- Source code: https://github.com/montimaj/{NAME}
+- Source code: {REPO_URL}
 - Data used: https://doi.org/10.5281/zenodo.7636781, https://doi.org/10.5281/zenodo.10119477
 - References: https://doi.org/10.1038/s44221-023-00181-7, https://doi.org/10.1016/j.agwat.2026.110647,
   https://doi.org/10.21105/joss.03418

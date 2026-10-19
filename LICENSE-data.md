@@ -58,5 +58,7 @@ Third-party material keeps its own license and attribution:
   OpenET-derived statistics (OpenET Terms of Service, above).
 
 Acknowledgement asked for by the AmeriFlux CC-BY-4.0 data policy, for any use of the
-BASE data or their derivatives above: "Funding for the AmeriFlux data portal was provided
-by the U.S. Department of Energy Office of Science."
+BASE data or their derivatives above (the wording AmeriFlux recommends):
+"We acknowledge the following AmeriFlux sites for their data records: [the sites used]. In
+addition, funding for AmeriFlux data resources was provided by the U.S. Department of
+Energy's Office of Science."

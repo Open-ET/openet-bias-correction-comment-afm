@@ -1,7 +1,7 @@
 # Comment on Golkar & de Oliveira (2026): code and data
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23383493.svg)](https://doi.org/10.5281/zenodo.23383493)
-[![Tests](https://github.com/montimaj/openet-bias-correction-comment-afm/actions/workflows/tests.yml/badge.svg)](https://github.com/montimaj/openet-bias-correction-comment-afm/actions/workflows/tests.yml)
+[![Tests](https://github.com/Open-ET/openet-bias-correction-comment-afm/actions/workflows/tests.yml/badge.svg)](https://github.com/Open-ET/openet-bias-correction-comment-afm/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Data: CC BY 4.0](https://img.shields.io/badge/Data-CC%20BY%204.0-lightgrey.svg)](LICENSE-data.md)
 [![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](environment.yml)
@@ -67,7 +67,7 @@ BASE files with an AmeriFlux account).
 ## Setup
 
 ```bash
-git clone https://github.com/montimaj/openet-bias-correction-comment-afm.git
+git clone https://github.com/Open-ET/openet-bias-correction-comment-afm.git
 cd openet-bias-correction-comment-afm
 conda env create -f environment.yml   # exact versions used for the published numbers
 conda activate etcomment
@@ -270,8 +270,8 @@ python scripts/13_make_zenodo_deposit.py              # package the Zenodo depos
   records the parameters (including the collection version), status and UTC time of every
   call; the cache makes reruns use the same extract. OpenET revises its collections, so a
   new extraction can differ slightly; if the md5 sums of the raw extracts match those
-  recorded in `results/openet_api_go26_summary.json` (`provenance`: `openet_monthly.csv`,
-  `openet_daily.csv`, `sites.csv`, `sites_200m.geojson`), `results/openet_api_*` and
+  recorded in `results/openet_api_go26_summary.json` (`provenance`: `md5_openet_monthly.csv`,
+  `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*` and
   `figures/fig2_*` are reproduced exactly.
 * Deposit: `scripts/13` writes deterministic zips; a rebuild from unchanged files gives the
   same md5 sums with the same Python and zlib (`environment.yml`; the deposit README records
@@ -370,10 +370,10 @@ they come from (ET in mm/day).
   radiation (1.7-26.2% by tower; 81% in November-March), and the closed daily ET it gives
   ranges from -12,389 mm/day (US-Mo1, 4 December 2024) to 9,533 mm/day (US-UTV, 11 January
   2024). flux-data-qaqc's `br` correction leaves out 97 of the 23,357 energy-balance days
-  (closed LE <= -100 or >= 850 W/m2). Its `ebr` correction gives no factor where its factors fall outside 0.5-2
-  around a day and no other year or day of year fills it: at US-UTV from November 2023 to
-  January 2024, when NETRAD - G is near zero or negative, so its EBR-closed site mean covers
-  mostly the growing season.
+  (closed LE <= -100 or >= 850 W/m2). Its `ebr` correction gives no factor where its factors
+  fall outside 0.5-2 around a day and no other year or day of year fills it: at US-UTV from
+  November 2023 to January 2024, when NETRAD - G is near zero or negative, so its EBR-closed
+  site mean covers mostly the growing season.
   US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2 (passed to flux-data-qaqc as
   NETRAD + 1 and G = 1 W/m2, the same NETRAD - G, because it drops an all-zero column). The
   Utah towers have two net radiometers that disagree: with the other one, the EBR-closed
@@ -499,15 +499,19 @@ fall to 0.34 and 0.71 mm/day, and the clean gains are 26%, 24%, 20% and 10%.
   4.0: cite each site's BASE DOI (`config/go26_sites.csv`; also in the `base_doi` column and
   the header of the daily file). `results/go26_reconstructed_openet_bias.csv` holds
   OpenET-derived statistics (OpenET Terms of Service, above).
-* Acknowledgement asked for by the AmeriFlux CC-BY-4.0 data policy: funding for the
-  AmeriFlux data portal was provided by the U.S. Department of Energy Office of Science.
+* The AmeriFlux sites and the funding of AmeriFlux data resources are acknowledged below
+  (Acknowledgements), as the AmeriFlux CC-BY-4.0 data policy asks.
 * Koppen-Geiger grid: Rubel et al. (2017), via the `kgcpy` package.
 * State boundaries: U.S. Census Bureau county layer, via `basemap-data`.
 
 ## Acknowledgements
 
 Funding provided by U.S. Geological Survey Water Resources Research Institute, OpenET Planning
-Phase III Grant G25AC00180-00.
+Phase III Grant G25AC00180-00. We acknowledge the following AmeriFlux sites for their data
+records: US-ARM, US-Bi1, US-Bi2, US-IAB, US-MN1, US-MN2, US-MN3, US-Mo1, US-NSb, US-Ne1,
+US-Ne2, US-Ne3, US-RGA, US-RGB, US-UTD, US-UTJ, US-UTV, US-UiC, US-UiG, US-VT1, US-WT1, and
+US-xSL. In addition, funding for AmeriFlux data resources was provided by the U.S. Department
+of Energy's Office of Science.
 
 ## Use of AI tools
 
@@ -520,8 +524,14 @@ reproducibility.
 
 ## Citation
 
-Cite the archive (DOI 10.5281/zenodo.23383493) as given in `CITATION.cff`; on GitHub, use
-"Cite this repository". Please also cite the comment once published, GO26, the works below
+Cite the archive as given in `CITATION.cff` (on GitHub, "Cite this repository"):
+
+> Kim, Y., Majumdar, S., Volk, J.M., ReVelle, P., Caldwell, T.G., & Huntington, J.L. (2026). Code
+> and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations
+> undermine reported OpenET biases (Version 1.0.0) [dataset]. Zenodo.
+> https://doi.org/10.5281/zenodo.23383493
+
+Please also cite the comment once published, GO26, the works below
 and the AmeriFlux site DOIs of any BASE data you use (for `results/go26_*`, the 22 BASE DOIs
 in `config/go26_sites.csv`).
 

@@ -25,7 +25,7 @@ dev = ["pytest", "playwright"]
 ee = ["earthengine-api"]
 
 [project.urls]
-Repository = "https://github.com/montimaj/openet-bias-correction-comment-afm"
+Repository = "https://github.com/Open-ET/openet-bias-correction-comment-afm"
 Archive = "https://doi.org/10.5281/zenodo.23383493"
 Comment-on = "https://doi.org/10.1016/j.agrformet.2026.111524"
 

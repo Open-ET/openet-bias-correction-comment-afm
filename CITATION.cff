@@ -6,7 +6,7 @@ license: MIT
 version: 1.0.0
 doi: 10.5281/zenodo.23383493
 date-released: "2026-10-15"
-repository-code: "https://github.com/montimaj/openet-bias-correction-comment-afm"
+repository-code: "https://github.com/Open-ET/openet-bias-correction-comment-afm"
 url: "https://doi.org/10.5281/zenodo.23383493"
 authors:
   - family-names: Kim
