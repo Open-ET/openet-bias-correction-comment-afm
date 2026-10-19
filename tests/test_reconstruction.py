@@ -191,45 +191,32 @@ def test_screened_bowen_ratio_factor():
     assert np.allclose(few["screened"], 1.2) and few["passed"].sum() == 4
 
 
-def test_fdq_bowen_ratio_follows_flux_data_qaqc():
-    """LE_c = (Rn - G)/(1 + H/LE), unscreened; undefined Bowen ratios and LE_c <= -100 or >= 850 W m-2 left out."""
-    le = pd.Series([100.0, 100.0, 0.0, 100.0, 100.0, 100.0, 10.0, 100.0, 100.0, 100.0])
-    flux = pd.Series([150.0, 0.0, 50.0, 150.0, -10.0, 20.0, 50.0, 100.0, 100.0, 40.0])   # LE + H
-    energy = pd.Series([180.0, 50.0, 60.0, np.nan, 200.0, 180.0, -400.0, 850.0, -100.0, 120.0])
-    out = cl.fdq_bowen_ratio_le(le, flux, energy)
-    h = flux - le
-    assert np.isclose(out[0], 120.0) and np.isclose(out[0], energy[0] / (1 + h[0] / le[0]))
-    assert np.isclose(out[6], -80.0)                       # negative but inside the limits: kept
-    assert np.isclose(out[9], 300.0)                       # factor 3, far outside 0.5-2: not screened
-    assert out[[1, 2, 3, 4, 5, 7, 8]].isna().all()         # Bowen ratio -1 or undefined, NaN input, limits (edges too)
+def test_fdq_factor_br_is_flux_data_qaqc_bowen_ratio():
+    """flux-data-qaqc 'br': factor (NETRAD - G)/(LE + H), unscreened; undefined Bowen ratios and corrected LE <= -100
+    or >= 850 W m-2 left without a factor."""
+    le = np.array([100.0, 100.0, 0.0, 100.0, 100.0, 100.0, 10.0, 100.0, 100.0, 100.0])
+    flux = np.array([150.0, 0.0, 50.0, 150.0, -10.0, 20.0, 50.0, 100.0, 100.0, 40.0])        # LE + H
+    energy = np.array([180.0, 50.0, 60.0, np.nan, 200.0, 180.0, -400.0, 850.0, -100.0, 120.0])  # NETRAD - G
+    daily = pd.DataFrame({"LE": le, "H": flux - le, "NETRAD": energy + 10.0, "G": 10.0},
+                         index=pd.date_range("2024-01-01", periods=10))
+    f = cl.fdq_factor(daily, "br")
+    assert np.isclose(f.iloc[0], 1.2)                      # LE_c = 180 / (1 + 50/100) = 120 W m-2
+    assert np.isclose(f.iloc[6], -8.0)                     # LE_c = -80: negative but inside the limits, kept
+    assert np.isclose(f.iloc[9], 3.0)                      # far outside 0.5-2: not screened
+    assert f.iloc[[1, 2, 3, 4, 5, 7, 8]].isna().all()      # Bowen ratio -1 or undefined, NaN input, limits (edges too)
+    zero_g = daily.assign(NETRAD=energy, G=0.0)            # G = 0 every day (none in BASE): the same factors
+    assert np.allclose(cl.fdq_factor(zero_g, "br"), f, equal_nan=True)
 
 
-def test_ebr_factor_follows_flux_data_qaqc():
-    """IQR filter, 15-day median (>= 5 values) else 11-day median, (0.5, 2) test, then the day-of-year
-    climatology centred on the next day, then the median."""
+def test_fdq_factor_ebr_is_flux_data_qaqc_ebc_cf():
+    """flux-data-qaqc 'ebr': ratios beyond 1.5 IQR removed and the windowed factor applied on every day, also on
+    days without inputs (here from the other year); nothing without any input day."""
     days = pd.date_range("2021-01-01", "2022-12-31")
-    energy = pd.Series(100.0, index=days)
-    flux = pd.Series(80.0, index=days)              # EBR 0.8: factor 1.25
-    flux.iloc[[10, 40, 41]] = [-300.0, 900.0, 5.0]  # outliers: removed by the IQR filter
-    f = cl.ebr_factor(flux, energy)
-    assert np.allclose(f, 1.25)
-    # sparse data: one ratio every 4 days, so 15-day windows hold <= 4 values and the 11-day median is used
-    sparse = pd.Series(np.nan, index=days)
-    n4 = len(sparse.iloc[::4])
-    sparse.iloc[::4] = np.where(np.arange(n4) % 2 == 0, 0.7, 0.9)
-    s = cl.ebr_factor(sparse * 100, energy, sparse.notna())
-    i = 100  # an 11-day window around a day holds 3 values (0.7, 0.9, 0.7 or 0.9, 0.7, 0.9)
-    window = sparse.iloc[i - 5:i + 6].dropna()
-    assert len(sparse.iloc[i - 7:i + 8].dropna()) < 5 and np.isclose(s.iloc[i], 1 / window.median())
-    # a median whose factor is not strictly within (0.5, 2) is rejected; with nothing else, the median of the kept
-    low = cl.ebr_factor(pd.Series(40.0, index=days[:30]), pd.Series(100.0, index=days[:30]))  # EBR 0.4
-    assert np.allclose(low, 2.5)  # step 2 rejects 0.4 (factor 2.5 >= 2), the climatology is empty: median 0.4
-    # a year without data is filled from the climatology of the other year, centred on the next day of year
-    ramp = pd.Series(0.6 + 0.001 * days.dayofyear, index=days).where(days.year == 2021)
-    g = cl.ebr_factor(ramp * 100, energy, ramp.notna())
-    k = 180  # 2022 day of year 180: mean of the 2021 ratios on days 176-186 (centred on day 181)
-    assert np.isclose(g[pd.Timestamp("2022-01-01") + pd.Timedelta(days=k - 1)], 1 / (0.6 + 0.001 * (k + 1)))
-    assert cl.ebr_factor(flux, energy, pd.Series(False, index=days)).isna().all()
+    daily = pd.DataFrame({"LE": 60.0, "H": 20.0, "NETRAD": 110.0, "G": 10.0}, index=days)  # EBR 0.8: factor 1.25
+    daily.iloc[[10, 40, 41], 1] = [-380.0, 820.0, -55.0]   # LE + H = -320, 880, 5: outliers
+    daily.iloc[200:230] = np.nan                            # a month without inputs
+    assert np.allclose(cl.fdq_factor(daily, "ebr"), 1.25)
+    assert cl.fdq_factor(daily.iloc[200:230], "ebr").isna().all()
 
 
 def test_closure_uses_matched_records_gap_fill_and_screens_singular_days(tmp_path, rec):

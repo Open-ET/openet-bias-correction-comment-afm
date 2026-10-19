@@ -178,11 +178,13 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   version used (`base_version`, `version_matches_go26`).
 * The script writes GO26's Table 1 as reproduced (half-hourly ET summed with missing records
   and days counted as zero, over calendar days, no closure), valid-day means with missing
-  records filled from the mean diurnal cycle, energy-balance closure (the Bowen-ratio method
-  as GO26 state it, applied as flux-data-qaqc's `br` correction, unscreened, to the
-  valid-day means and to the gap-filled ones; EBR as in flux-data-qaqc, plus a last fill for days it
-  leaves without a factor, as the main variant; screened Bowen ratio; the unscreened Bowen
-  ratio on every day only as a diagnostic), a comparison of
+  records filled from the mean diurnal cycle, energy-balance closure by flux-data-qaqc
+  (version 0.5.0, pinned in `environment.yml`; run on the daily means of LE, H, NETRAD and G
+  over the half-hours in which all four are valid, its daily factor multiplying the daily LE:
+  the Bowen-ratio method as GO26 state it, flux-data-qaqc's `br` correction, unscreened, on
+  the valid-day means and on the gap-filled ones; its `ebr` correction as the main variant;
+  our screened Bowen ratio; the unscreened Bowen ratio on every day only as a diagnostic),
+  a comparison of
   the cited files with AmeriFlux's October 2025 availability
   summary (the `scripts/11` cache), a day-by-day check of GO26's Figs. 8 and S2 (digitized by
   `scripts/04`) and, with the OpenET monthly extract (`scripts/02`), the OpenET bias by
@@ -319,25 +321,29 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
   radiation (1.7-26.2% by tower; 81% in November-March), and the closed daily ET it gives
   ranges from -12,389 mm/day (US-Mo1, 4 December 2024) to 9,533 mm/day (US-UTV, 11 January
   2024). GO26 name only the Bowen-ratio method (Twine et al., 2000). Applied as they state
-  it, as flux-data-qaqc's `br` correction (since version 0.4.0 flux-data-qaqc leaves out
-  days whose closed LE is <= -100 or >= 850 W/m2: 100 of the 23,357 days, 104 with
-  gap-filled LE), it gives site means 0.29-2.12 mm/day above GO26's Table 1 (mean +1.24;
-  `mean_et_br_fdq`), and 0.28-1.74 mm/day (mean +1.07; `mean_et_br_fdq_mdv`, Fig. 1d of
-  the comment) applied to the gap-filled valid-day means.
-  US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2. The Utah towers
-  have two net radiometers that disagree: with the other one, the EBR-closed gap-filled
-  means change from 2.19 to 2.63 (US-UTD), 2.31 to 1.58 (US-UTJ) and 1.68 to 1.95 mm/day
-  (US-UTV).
+  it, as flux-data-qaqc's `br` correction (which leaves out days whose closed LE is <= -100
+  or >= 850 W/m2: 97 of the 23,357 days), it gives site means 0.29-2.12 mm/day above GO26's
+  Table 1 (mean +1.24; `mean_et_br_fdq`), and 0.28-1.74 mm/day (mean +1.07;
+  `mean_et_br_fdq_mdv`, Fig. 1d of the comment) applied to the gap-filled valid-day means.
+  flux-data-qaqc's `ebr` correction gives no factor where its factors fall outside 0.5-2
+  around a day and no other year or day of year fills it: at US-UTV from November 2023 to
+  January 2024, when NETRAD - G is near zero or negative, so its EBR-closed site mean covers
+  mostly the growing season.
+  US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2 (passed to flux-data-qaqc as
+  NETRAD + 1 and G = 1 W/m2, the same NETRAD - G, because it drops an all-zero column). The
+  Utah towers have two net radiometers that disagree: with the other one, the EBR-closed
+  gap-filled means change from 2.11 to 2.59 (US-UTD), 2.30 to 2.96 (US-UTJ) and 2.24 to
+  1.04 mm/day (US-UTV).
 * **OpenET at GO26's towers** (`go26_reconstructed_openet_bias.csv`; collection 2.1,
   monthly). Against the zero-filled monthly observations (1,019 site-months, 22 towers) the
   bias is +0.65 mm/day, and +0.09, +0.45, +1.44 and +0.56 in winter, spring, summer and
   fall, close to GO26's +0.60 and +0.08, +0.41, +1.34 and +0.57. On the 742 site-months
   at the 21 towers with closure that have at least 20 valid days with all energy-balance
-  terms (the same days and months for every variant) it is +0.50 against the zero-filled
+  terms (the same days and months for every variant) it is +0.51 against the zero-filled
   sums; against GO26's processing as they state it, +0.17 against the valid-day means and
   -0.43 against Bowen-ratio-closed ET; and against the gap-filled valid-day means +0.30
-  unclosed, -0.24 Bowen-ratio closed as GO26 state it, -0.25 EBR-closed and -0.21 with the
-  screened Bowen ratio (summer +1.09; +0.55 and -0.44; +0.76, -0.14, -0.16 and -0.14),
+  unclosed, -0.24 Bowen-ratio closed as GO26 state it, -0.22 EBR-closed and -0.21 with the
+  screened Bowen ratio (summer +1.10; +0.57 and -0.41; +0.77, -0.12, -0.14 and -0.13),
   against -0.22 mm/day at the benchmark croplands (below).
 
 **Seven towers shared with the Volk et al. (2023a) benchmark (`scripts/06`; Table 4, Figs. 4 and 5).**

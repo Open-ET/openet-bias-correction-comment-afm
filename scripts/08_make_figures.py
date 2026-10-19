@@ -25,9 +25,10 @@ Table 1 figure (fig_table1_*; not yet numbered in the comment): GO26 Table 1 mea
         (c) gaps filled: as (b), with the missing half-hours of those days filled
             from the mean diurnal cycle of a centred 15-day window;
         (d) as (c), closed with the Bowen-ratio method as GO26 state it (Twine et
-            al., 2000), applied as flux-data-qaqc's 'br' correction: the day's
-            factor, unscreened, on days with the energy-balance terms, leaving out
-            days whose closed LE is <= -100 or >= 850 W m-2 (scripts/10);
+            al., 2000), flux-data-qaqc's 'br' correction (version in
+            environment.yml): the day's factor, unscreened, on days with the
+            energy-balance terms, leaving out days whose closed LE is <= -100 or
+            >= 850 W m-2 (scripts/10);
             (a)-(c) have no closure.
 
 Inputs: results/digitized_US-UTJ.csv, results/digitized_summary.json (scripts/04),

@@ -174,8 +174,8 @@ FILE_NOTES = {
         "*_netrad_alt), first and last valid LE and last record, valid and energy-balance days, site means of the "
         "zero-filled sums (over calendar days and over the days in the file), of valid-day ET (mean of valid "
         "records, and gap-filled by the mean diurnal variation, *_mdv), of Bowen-ratio closed ET as GO26 state it "
-        "(flux-data-qaqc's 'br' correction; unfilled *_br_fdq, gap-filled *_br_fdq_mdv) and of EBR, screened and "
-        "unscreened Bowen-ratio closed ET, "
+        "(flux-data-qaqc's 'br' correction; unfilled *_br_fdq, gap-filled *_br_fdq_mdv), of EBR (its 'ebr' "
+        "correction) and of screened and unscreened Bowen-ratio closed ET, "
         "Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 "
         "(diff_*), implied zero fractions; *_qc: LE flagged 2 in LE_SSITC_TEST removed (AmeriFlux BASE derivative)",
     "go26_reconstructed_daily.csv":

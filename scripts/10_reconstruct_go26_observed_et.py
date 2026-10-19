@@ -21,30 +21,26 @@ GO26 cite (one file per site; all inputs offline):
     (et_unclosed_mdv: the mean of the same time of day over a centred 15-day
     window, etcomment.ameriflux.mdv_daily), which removes the bias of days
     whose LE is missing mostly at night
-  * energy-balance closure on every valid day.  LE + H and NETRAD - G come
-    from the sub-daily records in which LE, H, NETRAD and G are all valid, on
-    days where these cover >= 50% of the day (energy-balance days;
+  * energy-balance closure on every valid day by flux-data-qaqc (Volk et
+    al., 2021; version pinned in environment.yml), run on the daily means of
+    LE, H, NETRAD and G over the sub-daily records in which all four are
+    valid, on days where these cover >= 50% of the day (energy-balance days;
     etcomment.closure.matched_daily_means), so that all four terms describe
-    the same hours.  EBR (et_ebr, et_ebr_mdv; the main closed variant): the
-    energy-balance-ratio closure of flux-data-qaqc, used by the Volk et al.
-    (2023a) benchmark and V24 (etcomment.closure.ebr_factor; it reproduces the
-    benchmark's own factor on 99.5% of its station-days): the ratios
-    EBR = (LE + H)/(NETRAD - G) of the energy-balance days, without those
-    beyond 1.5 IQR of the period's quartiles; each day, their median over a
-    centred 15-day window (11-day where that holds fewer than 5), kept where
-    0.5 < 1/median < 2; on the other days flux-data-qaqc's day-of-year
-    climatology of these medians; on days still without a factor, a last
-    fill that flux-data-qaqc does not have (it leaves those days without a
-    factor): 1/median of all the filtered ratios of the period.  Bowen ratio
-    as GO26 state it (et_br_fdq): their Section 2.1 names the Bowen-ratio
-    method (Twine et al., 2000) and nothing more, and they compared it with
-    EBR using flux-data-qaqc's routines, so it is applied as flux-data-qaqc's
-    'br' correction (etcomment.closure.fdq_bowen_ratio_le): the valid-day LE
-    times the day's factor (NETRAD - G)/(LE + H), unscreened and without gap
-    filling, on energy-balance days; days on which the closed LE is <= -100
+    the same hours; its daily correction factor multiplies the valid-day LE
+    (etcomment.closure.fdq_factor).  EBR (et_ebr, et_ebr_mdv; the main
+    closed variant): flux-data-qaqc's 'ebr' correction (the FLUXNET2015/
+    ONEFlux energy-balance-ratio method with its limits); days without
+    energy-balance terms take the factor its moving windows, adjacent years
+    or day-of-year climatology give, and stay without one where none does.
+    Bowen ratio as GO26 state it (et_br_fdq): their Section 2.1 names the
+    Bowen-ratio method (Twine et al., 2000) and nothing more, and they
+    compared it with EBR using flux-data-qaqc's routines, so it is
+    flux-data-qaqc's 'br' correction: the valid-day LE times the day's factor
+    (NETRAD - G)/(LE + H), unscreened and without gap filling, on
+    energy-balance days; days on which flux-data-qaqc's closed LE is <= -100
     or >= 850 W m-2 (or the Bowen ratio is undefined) are left without a
-    value, as flux-data-qaqc does since version 0.4.0; et_br_fdq_mdv: the
-    same applied to the gap-filled valid-day LE.  Screened Bowen ratio
+    value; et_br_fdq_mdv: the same factor applied to the gap-filled
+    valid-day LE.  Screened Bowen ratio
     (et_br_screened, et_br_screened_mdv; our screen of it): the day's factor
     (NETRAD - G)/(LE + H) where it is 0.5-2 with
     LE + H > 0 and NETRAD - G > 0; every other valid day takes the median of
@@ -277,10 +273,12 @@ def _le_variant(le: pd.Series, period: pd.DatetimeIndex, lam: float, eb: pd.Data
     br = cl.screened_br_factor(s["flux"], s["energy"], eb_ok)
     factor, passed = br["factor"], br["passed"]
     f_scr = br["screened"].where(le_ok)
-    f_ebr = cl.ebr_factor(s["flux"], s["energy"], eb_ok).where(le_ok)
+    eb_means = s[list(cl.FDQ_COLUMNS)].where(eb_ok, axis=0)  # flux-data-qaqc's inputs: energy-balance days only
+    f_ebr = cl.fdq_factor(eb_means, "ebr").where(le_ok)
+    f_fdq = cl.fdq_factor(eb_means, "br")  # Bowen ratio as GO26 state it: NaN where flux-data-qaqc leaves it out
     et_br = et_unclosed * factor  # unscreened: NaN off energy-balance days
-    et_fdq = cl.fdq_bowen_ratio_le(d["LE"].where(eb_ok), s["flux"], s["energy"]) * to_et  # as GO26 state it
-    et_fdq_mdv = cl.fdq_bowen_ratio_le(mdv["mean"].where(eb_ok), s["flux"], s["energy"]) * to_et
+    et_fdq = et_unclosed * f_fdq
+    et_fdq_mdv = et_mdv * f_fdq
     et_zero = af.zero_filled_daily_sum(af.et_per_step(le, lam, step)).reindex(period, fill_value=0.0)
     in_file = period <= file_end.normalize()
     nov_mar = pd.Series(period.month.isin(NOV_MAR), index=period)
@@ -916,7 +914,8 @@ def print_summary(out: pd.DataFrame, ok: pd.Series, qc_flags: bool) -> None:
         print(f"Largest unscreened Bowen-ratio closed ET: {worst['max_et_br_unscreened']:.1f} mm/d at "
               f"{worst['site']} on {worst['max_et_br_unscreened_date']}")
     lo, hi = cl.FDQ_LE_LIMITS
-    print(f"Bowen ratio as GO26 state it (flux-data-qaqc 'br'): {int(s['n_br_fdq_left_out'].sum())} of {eb} "
+    print(f"Bowen ratio as GO26 state it (flux-data-qaqc {cl.fdq_version()} 'br'): "
+          f"{int(s['n_br_fdq_left_out'].sum())} of {eb} "
           f"energy-balance days left out (closed LE <= {lo:g} or >= {hi:g} W/m2, or Bowen ratio undefined); "
           f"{int(s['n_br_fdq_mdv_left_out'].sum())} with the gap-filled LE")
     alt = s[s["netrad_column_alt"].fillna("").ne("")]
@@ -1039,15 +1038,14 @@ def main(argv: list[str] | None = None) -> None:
         "br_factor: (NETRAD - G)/(LE + H) from those records on energy-balance days (unscreened); br_factor_screened:",
         "br_factor where 0.5-2 with LE + H > 0 and NETRAD - G > 0; every other valid day takes the median of such",
         "factors in a centred 15-day window if it holds at least 5 of them, else the median of all such factors of",
-        "the study period. ebr_factor: energy-balance-ratio factor of flux-data-qaqc (Volk et al., 2023a) on every",
-        "valid day: 1/median of the energy-balance days' ratios (LE + H)/(NETRAD - G) within 1.5 IQR in a centred",
-        "15-day window (11-day if that holds fewer than 5) where 0.5 < 1/median < 2, else its day-of-year",
-        "climatology of these; days still without a factor take 1/median of all the filtered ratios of the study",
-        "period, a last fill that flux-data-qaqc does not have (it leaves those days without a factor).",
-        "et_br_fdq: Bowen-ratio closure as GO26 state it (Twine et al., 2000), applied as flux-data-qaqc's 'br'",
-        "correction: et_unclosed x br_factor, unscreened, on energy-balance days; blank where the closed LE is <= -100",
-        "or >= 850 W/m2 or the Bowen ratio is undefined (flux-data-qaqc >= 0.4.0; flag BR_fdq_left_out);",
-        "et_br_fdq_mdv: the same with et_unclosed_mdv (flag BR_fdq_mdv_left_out).",
+        "the study period. Closures by flux-data-qaqc (Volk et al., 2021), version "
+        f"{cl.fdq_version()}, run on the daily means of LE, H, NETRAD and G over the records in which all four",
+        "are valid, on energy-balance days. ebr_factor: its 'ebr' correction factor (ebc_cf: FLUXNET2015/ONEFlux",
+        "energy balance ratio with flux-data-qaqc's limits) on every valid day it gives one for.",
+        "et_br_fdq: Bowen-ratio closure as GO26 state it (Twine et al., 2000), flux-data-qaqc's 'br' correction:",
+        "et_unclosed x br_factor, unscreened, on energy-balance days; blank where flux-data-qaqc's closed LE is",
+        "<= -100 or >= 850 W/m2 or the Bowen ratio is undefined (flag BR_fdq_left_out); et_br_fdq_mdv: the same",
+        "with et_unclosed_mdv (flag BR_fdq_mdv_left_out).",
         "et_ebr, et_br_screened: et_unclosed x factor; *_mdv: et_unclosed_mdv x factor (et_ebr_mdv: main closed ET);",
         "et_br_unscreened: et_unclosed x br_factor on every energy-balance day (diverges as LE + H -> 0; diagnostic).",
         "et_hh_sum_zero_filled: daily sum of sub-daily ET with missing records counted as zero (pandas",

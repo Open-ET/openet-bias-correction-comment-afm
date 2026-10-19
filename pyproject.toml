@@ -17,7 +17,7 @@ requires-python = ">=3.11"  # pandas 3 needs 3.11+; the published numpy 2.5, sci
 dependencies = [
   "numpy", "pandas>=2.1", "scipy", "matplotlib>=3.8", "geopandas>=0.14", "shapely>=2",
   "pyproj", "pyogrio", "scikit-learn", "xgboost", "openpyxl", "pillow", "requests",
-  "kgcpy==1.1.8", "basemap-data==2.0.0",
+  "fluxdataqaqc==0.5.0", "kgcpy==1.1.8", "basemap-data==2.0.0",
 ]
 
 [project.optional-dependencies]
