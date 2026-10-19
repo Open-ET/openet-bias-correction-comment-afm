@@ -47,7 +47,8 @@ which are not tracked in git:
 
 `scripts/13_make_zenodo_deposit.py` builds the deposit in `zenodo/` (gitignored): one zip per
 folder in the table above, with paths relative to the repository root, a zip of the code, a
-README (the deposit description) and MD5SUMS. It checks the inputs of every archive first and
+README (the deposit description), `description.html` (the same as HTML for the Description
+field of the Zenodo record) and MD5SUMS. It checks the inputs of every archive first and
 stops, writing nothing, if one is missing or incomplete; it then builds the deposit in a
 temporary folder next to `zenodo/` and moves it into place, so a failed build leaves the
 previous deposit as it was. The zips are deterministic (sorted entries, fixed timestamps,
@@ -224,7 +225,7 @@ in place.
 | `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 12 min (flux-data-qaqc runs for every site, closure and variant) |
 | `11_ameriflux_availability.py` | internet on the first run, `config/` | `data/raw/ameriflux_public/`, `results/ameriflux_*` | seconds |
 | `12_openet_api_analysis.py` | outputs of 02, 04, 06 and 11; benchmark; `config/` | `results/openet_api_*`, `data/raw/openet_api/derived/` | seconds |
-| `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/`, the record of 14 (`--no-disclosure-check` without it) | `zenodo/` (archives, README.md, MD5SUMS) | seconds |
+| `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/`, the record of 14 (`--no-disclosure-check` without it) | `zenodo/` (archives, README.md, description.html, MD5SUMS) | seconds |
 | `14_check_openet_disclosure.py` | outputs of 10 and 12, `data/raw/openet_api/` (raw and `derived/`), benchmark, `config/` | `data/raw/openet_api/derived/disclosure_check.json` (not deposited) | about 10 min |
 
 ```bash
@@ -281,37 +282,86 @@ python scripts/13_make_zenodo_deposit.py              # package the Zenodo depos
 
 ## Key results
 
-**GO26's own figure (US-UTJ, 2024; `scripts/04`).** 206 of 353 plotted daily observations
-are exactly 0.00 mm/day (within 0.015 mm/day). Including them reproduces GO26's printed
-statistics (OpenET RMSE 1.88 vs 1.877 printed; XGBoost 0.89 vs 0.885; improvement 52.7% vs
-52.8%; site mean 0.62 vs 0.59 mm/day in GO26 Table 1). Removing them gives OpenET RMSE 1.04
-and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of +1.28 mm/day.
+The results reported in the comment, in its order, with the scripts and files in `results/`
+they come from (ET in mm/day).
 
-**GO26's Table 1 from AmeriFlux BASE (`scripts/10`; files in `results/`).**
+**Missing observations counted as zero reproduce GO26's Table 1 (Section 2, Figure 1;
+`scripts/10`, `go26_observed_et_reconstruction.csv`).**
 
-* **Reproduced.** Daily sums of half-hourly ET with missing records and days counted as
-  zero, averaged over the calendar days of each study period without closure (pandas'
-  `resample("D").sum()` default), match GO26's Table 1 within 0.005 mm/day at 14 of the 22
-  sites, within 0.01 at 17 (largest difference 0.008, US-IAB) and within 0.04 at 20
-  (`go26_observed_et_reconstruction.csv`). Dividing by the days up to each file's last
-  record gives 16 within 0.005 (the US-IAB, US-RGB and US-VT1 files end early). At the three
-  Mead towers (US-Ne1-Ne3; hourly files, the version GO26 cite) the means are 0.03 mm/day
-  (2%) higher, for reasons we could not find; at US-UTD and US-UTV they are 0.12 and 0.21
-  mm/day higher.
+* Summing the available half-hourly ET from the AmeriFlux BASE files, with missing
+  observations and entirely missing days treated as zero (pandas' `resample("D").sum()`
+  default, over the calendar days of each study period, no closure), reproduces the mean
+  observed ET in GO26's Table 1 within 0.04 mm/day at 20 of 22 sites (Figure 1a; mean
+  difference +0.02, RMSD 0.05; within 0.005 at 14 sites and 0.01 at 17). At the two labeled
+  sites, US-UTD and US-UTV (0.12 and 0.21 mm/day higher), the BASE versions examined contain
+  more LE observations than the earlier versions GO26 appear to have processed.
+* Restricting the analysis to valid observations, gap filling and correcting for energy
+  balance closure give substantially different site means (Figure 1b-d; mean differences
+  from Table 1 +0.62, +0.50 and +1.07 mm/day): (b) daily means of the valid half-hours on
+  days with at least 50% of them; (c) the same, with the missing half-hours gap-filled from
+  the mean diurnal cycle of a 15-day moving window; (d) as (c), on the days with all energy
+  balance components (92% of the days in (c)), closed with the Bowen-ratio method described
+  by GO26 (Twine et al., 2000) in flux-data-qaqc 0.5.0, without screening the daily
+  correction factors.
+* Daily series (`go26_reconstructed_figure_check.csv`): at US-UTJ, 206 of 353 daily
+  observations in GO26's Fig. S2 are exactly zero, on dates without available LE
+  measurements in the BASE file examined; at US-UiC, the zero-filled daily sums reproduce 360
+  of 361 observations in GO26's Fig. 8 within 0.02 mm/day, including 79 days with incomplete
+  flux records.
+
+**Implications for OpenET biases and ML correction (Section 3).**
+
+* On the 742 site-months at 21 sites with at least 20 days that pass GO26's 50% filter and
+  have all energy balance terms (`go26_reconstructed_openet_bias.csv`, month set
+  `common_valid_months`), the monthly bias of the current OpenET ensemble (collection 2.1) is
+  +0.51 mm/day against zero-filled ET and +0.17 against the daily means of the valid
+  observations, and -0.43 with the Bowen-ratio closure described by GO26, applied without
+  screening the daily correction factors. With the missing half-hours gap-filled from the
+  mean diurnal cycle (a step GO26 do not describe), it is +0.30 before and -0.24 after the
+  same Bowen-ratio closure, and -0.22 with flux-data-qaqc's energy-balance-ratio (EBR)
+  closure.
+* Against measured monthly ET at 36 cropland stations of the Volk et al. (2023a) benchmark
+  (2016-2022; closure-corrected eddy covariance at 32 stations and weighing lysimeters at
+  four; 550 months with at most five gap-filled days), the ensemble bias is -0.22 mm/day
+  (`scripts/12`, `openet_api_benchmark_summary.csv`).
+* At US-UTJ, the observations and predictions digitized from GO26's Fig. S2 (`scripts/04`,
+  `digitized_summary.json`) reproduce the reported XGBoost reduction in RMSE (52.7%; GO26:
+  52.8%; OpenET RMSE 1.88 vs 1.877 printed, XGBoost 0.89 vs 0.885). Excluding the
+  zero-valued reference observations reduces it to 0.5% (OpenET RMSE 1.04, XGBoost 1.03).
+
+**Additional methodological concerns (Section 4).**
+
+* Energy balance correction: GO26's site means are reproduced only with uncorrected
+  turbulent fluxes and missing data counted as zero. With the Bowen-ratio closure as GO26
+  describe it, site means are 0.29-2.12 mm/day above Table 1 (mean +1.24; `mean_et_br_fdq`),
+  and 0.28-1.74 mm/day (mean +1.07; `mean_et_br_fdq_mdv`, Figure 1d) with the gap-filled
+  means.
+* Machine learning validation (`scripts/07`, `leakage_experiment_summary.csv`; three seeds,
+  38 cropland stations of the benchmark, 5,093 overpass-day records): the RMSE reduction of
+  a GO26-like XGBoost correction of OpenET ranges from 9% to 26% with the validation
+  strategy: 26% with a record-level random split, 23% with a site-grouped hold-out, 19% with
+  leave-one-site-out and 9% when clusters of stations within 10 km are held out together.
+
+## Further results (not in the comment)
+
+**GO26's Table 1 and daily series (`scripts/04`, `scripts/10`).**
+
+* At US-UTJ, removing the zero-valued observations also changes the OpenET bias from +1.28
+  to +0.45 mm/day; with them, the digitized site mean is 0.62 mm/day (0.59 in GO26's Table
+  1). At US-UiC the 4 plotted days without LE are exact zeros; at US-UTJ, 11 plotted non-zero
+  days have no LE in the cited file (consistent with GO26 having processed an earlier
+  version). The first BASE LE record is from 5 June 2024 at US-UTJ (GO26's zero run ends on 4
+  June) and from 25 May, 5 September and 27 September 2023 at US-UTD, US-NSb and US-UTV.
+* Dividing the zero-filled sums by the days up to each file's last record gives 16 sites
+  within 0.005 mm/day (the US-IAB, US-RGB and US-VT1 files end early; largest difference over
+  calendar days 0.008, US-IAB). At the three Mead towers (US-Ne1-Ne3; hourly files, the
+  version GO26 cite) the means are 0.03 mm/day (2%) higher, for reasons we could not find.
 * **BASE versions.** The files are the versions GO26 cite, but at 11 sites these are newer
   than the versions in AmeriFlux's availability summary of October 2025: the cited files
   run 8-13 months beyond GO26's study periods, which end in the final year of the earlier
   versions' LE (`go26_base_version_check.csv`). GO26 accessed the data in March 2026 and
   appear to have processed the earlier versions. At US-UTD and US-UTV the cited versions
   hold at least 829 (6.8%) and 2,711 (14.2%) more LE half-hours in the study periods.
-* **Day by day** (`go26_reconstructed_figure_check.csv`). At US-UiC in 2020 (version
-  unchanged), GO26's plotted daily observed ET (Fig. 8) equals the BASE zero-filled daily
-  sums within 0.02 mm/day on 360 of 361 days, including 79 days with fewer than half of the
-  records; the 4 plotted days without LE are exact zeros. At US-UTJ in 2024 all 206
-  exact-zero days are days without a single LE record in the cited file, and 11 plotted
-  non-zero days have no LE in it (consistent with GO26 having processed an earlier version).
-  The first BASE LE record is from 5 June 2024 at US-UTJ (GO26's zero run ends on 4 June) and
-  from 25 May, 5 September and 27 September 2023 at US-UTD, US-NSb and US-UTV.
 * **Valid days and closure** (`go26_observed_et_reconstruction.csv`,
   `go26_reconstructed_daily.csv`). LE is missing mostly at night at some towers, so filling
   the missing records of valid days from the mean diurnal cycle lowers their means by
@@ -319,12 +369,8 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
   outside 0.5-2 on 2,794 of 23,357 energy-balance days (12.0%) at the 21 towers with net
   radiation (1.7-26.2% by tower; 81% in November-March), and the closed daily ET it gives
   ranges from -12,389 mm/day (US-Mo1, 4 December 2024) to 9,533 mm/day (US-UTV, 11 January
-  2024). GO26 name only the Bowen-ratio method (Twine et al., 2000). Applied as they state
-  it, as flux-data-qaqc's `br` correction (which leaves out days whose closed LE is <= -100
-  or >= 850 W/m2: 97 of the 23,357 days), it gives site means 0.29-2.12 mm/day above GO26's
-  Table 1 (mean +1.24; `mean_et_br_fdq`), and 0.28-1.74 mm/day (mean +1.07;
-  `mean_et_br_fdq_mdv`, Fig. 1d of the comment) applied to the gap-filled valid-day means.
-  flux-data-qaqc's `ebr` correction gives no factor where its factors fall outside 0.5-2
+  2024). flux-data-qaqc's `br` correction leaves out 97 of the 23,357 energy-balance days
+  (closed LE <= -100 or >= 850 W/m2). Its `ebr` correction gives no factor where its factors fall outside 0.5-2
   around a day and no other year or day of year fills it: at US-UTV from November 2023 to
   January 2024, when NETRAD - G is near zero or negative, so its EBR-closed site mean covers
   mostly the growing season.
@@ -336,14 +382,10 @@ and XGBoost RMSE 1.03 (0.5% improvement), and an OpenET bias of +0.45 instead of
 * **OpenET at GO26's towers** (`go26_reconstructed_openet_bias.csv`; collection 2.1,
   monthly). Against the zero-filled monthly observations (1,019 site-months, 22 towers) the
   bias is +0.65 mm/day, and +0.09, +0.45, +1.44 and +0.56 in winter, spring, summer and
-  fall, close to GO26's +0.60 and +0.08, +0.41, +1.34 and +0.57. On the 742 site-months
-  at the 21 towers with closure that have at least 20 valid days with all energy-balance
-  terms (the same days and months for every variant) it is +0.51 against the zero-filled
-  sums; against GO26's processing as they state it, +0.17 against the valid-day means and
-  -0.43 against Bowen-ratio-closed ET; and against the gap-filled valid-day means +0.30
-  unclosed, -0.24 Bowen-ratio closed as GO26 state it, -0.22 EBR-closed and -0.21 with the
-  screened Bowen ratio (summer +1.10; +0.57 and -0.41; +0.77, -0.12, -0.14 and -0.13),
-  against -0.22 mm/day at the benchmark croplands (below).
+  fall, close to GO26's +0.60 and +0.08, +0.41, +1.34 and +0.57. On the 742 common
+  site-months the screened Bowen ratio (our screen) gives -0.21; in summer the variants give
+  +1.10 (zero-filled); +0.57 and -0.41 (valid-day, unclosed and Bowen-ratio closed); +0.77,
+  -0.12, -0.14 and -0.13 (gap-filled: unclosed, Bowen ratio, EBR, screened Bowen ratio).
 
 **Seven towers shared with the Volk et al. (2023a) benchmark (`scripts/06`; `results/shared_site_*`, `figures/fig4_*`, `fig5_*`).**
 
@@ -361,18 +403,15 @@ exactly zero (none at cropland stations); the longest run within 0.015 mm/day of
 (median difference 0.00 mm/day at 51 cropland EC stations), but the daily Bowen-ratio factor
 misbehaves on a median 5% of days, mostly in November-March.
 
-**Leakage experiment (`scripts/07`, three seeds, 38 cropland stations, 5,093 overpass-day
-records).** XGBoost RMSE gain over OpenET: 26% with a record-level random split, 23% with a
-site-grouped hold-out, 19% with leave-one-site-out and 9% when clusters of stations within
-10 km are held out together (leave-one-cluster-out; model RMSE 12% higher than under
-leave-one-site-out, similar to GO26's increase from 0.804 to 0.897 mm/day). Records given
-zero targets and climate-zone median meteorology were predicted at 1.0 (random split) and
-1.5 mm/day (leave-one-site-out), against 2.8-2.9 mm/day for OpenET and about 3.2 mm/day
-measured. Stations without tower meteorology carry the same medians on real days, as
-imputation does in GO26's data, which dilutes the zero-fill signature; with missing
-meteorology left unfilled on all other days (`results/leakage_experiment_met_unfilled*`),
-the predictions on the zero-filled records fall to 0.34 and 0.71 mm/day, and the clean
-gains are 26%, 24%, 20% and 10%.
+**Leakage experiment, details (`scripts/07`).** Leave-one-cluster-out raises the model RMSE
+by 12% over leave-one-site-out, similar to GO26's increase from 0.804 to 0.897 mm/day.
+Records given zero targets and climate-zone median meteorology were predicted at 1.0
+(random split) and 1.5 mm/day (leave-one-site-out), against 2.8-2.9 mm/day for OpenET and
+about 3.2 mm/day measured. Stations without tower meteorology carry the same medians on
+real days, as imputation does in GO26's data, which dilutes the zero-fill signature; with
+missing meteorology left unfilled on all other days
+(`results/leakage_experiment_met_unfilled*`), the predictions on the zero-filled records
+fall to 0.34 and 0.71 mm/day, and the clean gains are 26%, 24%, 20% and 10%.
 
 ### Current OpenET (API, collection 2.1) and AmeriFlux data availability (`scripts/11`, `scripts/12`)
 
@@ -464,6 +503,11 @@ gains are 26%, 24%, 20% and 10%.
   AmeriFlux data portal was provided by the U.S. Department of Energy Office of Science.
 * Koppen-Geiger grid: Rubel et al. (2017), via the `kgcpy` package.
 * State boundaries: U.S. Census Bureau county layer, via `basemap-data`.
+
+## Acknowledgements
+
+Funding provided by U.S. Geological Survey Water Resources Research Institute, OpenET Planning
+Phase III Grant G25AC00180-00.
 
 ## Use of AI tools
 

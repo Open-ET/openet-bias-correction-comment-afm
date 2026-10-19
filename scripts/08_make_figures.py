@@ -20,7 +20,7 @@ Table 1 figure (fig_table1_*; not yet numbered in the comment): GO26 Table 1 mea
         (a) missing values set to zero: daily sums of the available half-hours,
             missing half-hours and days counted as zero, over the calendar days
             of the period;
-        (b) missing values excluded: the mean of the valid half-hours on days
+        (b) missing values set to NA: the mean of the valid half-hours on days
             with at least half of them (GO26's stated 50% filter), over those days;
         (c) gaps filled: as (b), with the missing half-hours of those days filled
             from the mean diurnal cycle of a centred 15-day window;
@@ -91,7 +91,7 @@ RECON_SITES = "go26_observed_et_reconstruction.csv"
 TABLE1_REF = "go26_table1_mean_obs_et"
 TABLE1_SERIES = {  # column of scripts/10 (one panel each): marker face, panel title
     "mean_et_hh_sum_zero_filled_unclosed": (st.ORANGE, "Missing values set to zero"),
-    "mean_et_unclosed_valid": (st.BLUE, "Missing values excluded"),
+    "mean_et_unclosed_valid": (st.BLUE, "Missing values set to NA"),
     "mean_et_unclosed_mdv": (st.AQUA, "Missing values gap-filled"),
     "mean_et_br_fdq_mdv": (st.INK, "Gap-filled and closure-corrected"),
 }

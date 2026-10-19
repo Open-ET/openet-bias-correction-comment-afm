@@ -155,8 +155,15 @@ def test_build_assembles_every_archive(s13, tmp_path):
     readme = (out / "README.md").read_text()
     assert all(f"`{h}`" in readme for h in sums.values())
     assert "Jane A. Doe ([0000-0001-2345-6789](https://orcid.org/0000-0001-2345-6789)), Richard Roe\n" in readme
-    assert "Funding for the AmeriFlux data portal was provided by the U.S. Department of Energy Office of\nScience" \
-        in readme
+    assert "funding for the AmeriFlux\n  data portal was provided by the U.S. Department of Energy Office of Science" in readme
+    assert "## Acknowledgements\n\nFunding provided by U.S. Geological Survey Water Resources Research Institute" in readme
+    # description.html: the README as HTML for the Zenodo record, with only the tags Zenodo keeps
+    desc = (out / "description.html").read_text()
+    assert desc == s13.description_html(readme) and "<h2>Contents</h2>" in desc
+    assert set(re.findall(r"</?([a-z0-9]+)", desc)) <= set(s13.ZENODO_TAGS)
+    assert not re.search(r"`|\]\(|^#|\*", re.sub(r"<code>.*?</code>", "", desc), re.M)  # no Markdown left
+    assert all(f"<td><code>{h}</code></td>" in desc for h in sums.values())
+    assert '<a href="https://orcid.org/0000-0001-2345-6789">0000-0001-2345-6789</a>' in desc
     # deterministic: a second build elsewhere gives the same bytes
     s13.build(tmp_path / "again", "9.9.9")
     again = _snapshot(tmp_path / "again")
@@ -336,3 +343,22 @@ def test_figure_script_reruns_with_hash_seed_zero_and_writes_pdf_without_date(tm
     pdf = (tmp_path / "out.pdf").read_bytes()
     assert b"/CreationDate" not in pdf and b"/Producer" in pdf
     assert (tmp_path / "out.png").read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_description_html_converts_the_readme_markdown(s13):
+    md = ("# Title\n\nVersion 1 · DOI [10.1/x](https://doi.org/10.1/x) · Code: https://example.org/repo\n\n"
+          "## Section\n\nA *journal* name, `a_*` code & more\n(see https://doi.org/10.2/y).\n\n"
+          "| File | MD5 |\n|---|---|\n| `a.zip` | `abc` |\n\n"
+          "1. First, wrapped\n   onto two lines:\n   - nested one\n     wrapped;\n   - nested two\n2. Second\n\n"
+          "- bullet\n")
+    assert s13.description_html(md) == (
+        '<p>Version 1 · DOI <a href="https://doi.org/10.1/x">10.1/x</a> · Code: '
+        '<a href="https://example.org/repo">https://example.org/repo</a></p>\n'
+        "<h2>Section</h2>\n"
+        '<p>A <em>journal</em> name, <code>a_*</code> code &amp; more (see '
+        '<a href="https://doi.org/10.2/y">https://doi.org/10.2/y</a>).</p>\n'
+        "<table><tbody><tr><th>File</th><th>MD5</th></tr><tr><td><code>a.zip</code></td><td><code>abc</code></td></tr>"
+        "</tbody></table>\n"
+        "<ol><li>First, wrapped onto two lines:<ul><li>nested one wrapped;</li><li>nested two</li></ul></li>"
+        "<li>Second</li></ol>\n"
+        "<ul><li>bullet</li></ul>\n")

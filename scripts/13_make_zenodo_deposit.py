@@ -3,7 +3,8 @@
 The deposit holds a snapshot of the code and the inputs and outputs that git
 does not track, one zip per folder with paths relative to the repository root
 (unzip them there), plus README.md (the deposit description, with sizes and
-md5 sums) and MD5SUMS:
+md5 sums), description.html (README.md as HTML for the Description field of
+the Zenodo record) and MD5SUMS:
 
   openet-bias-correction-comment-afm-<version>.zip   the files git tracks: code, tests, docs, metadata
   config.zip                                         GO26 Tables 1 and 3, V24 station list
@@ -50,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import html
 import json
 import os
 import platform
@@ -615,11 +617,13 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
   addresses removed, for provenance. `results/ameriflux_*` derive from them (CC BY 4.0; attribute
   AmeriFlux and the site teams).
 - GO26 figures (`data/external/golkar_deoliveira_2026/`): CC BY 4.0, Golkar and de Oliveira (2026).
+- Acknowledgement asked for by the AmeriFlux CC-BY-4.0 data policy: funding for the AmeriFlux
+  data portal was provided by the U.S. Department of Energy Office of Science.
 
 ## Acknowledgements
 
-Funding for the AmeriFlux data portal was provided by the U.S. Department of Energy Office of
-Science.
+Funding provided by U.S. Geological Survey Water Resources Research Institute, OpenET Planning
+Phase III Grant G25AC00180-00.
 
 ## Citation
 
@@ -646,6 +650,80 @@ reviewed and verified by the authors, who retain full responsibility for the fin
 conclusions. The analysis code is publicly available on GitHub to support transparency and
 reproducibility.
 """
+
+
+# HTML tags Zenodo keeps in a record's description (InvenioRDM's sanitizer); description_html uses no others
+ZENODO_TAGS = ("a", "code", "em", "h2", "li", "ol", "p", "table", "tbody", "td", "th", "tr", "ul")
+LIST_ITEM = re.compile(r"^( *)(-|\d+\.) (.*)$")
+
+
+def _inline(text: str) -> str:
+    """Inline Markdown of the deposit README as HTML: `code`, *emphasis*, [links](url) and bare URLs."""
+    out = []
+    for i, part in enumerate(re.split(r"`([^`]*)`", text)):
+        part = html.escape(part, quote=False)
+        if i % 2:
+            out.append(f"<code>{part}</code>")
+            continue
+        links: list[str] = []
+
+        def keep(m: re.Match) -> str:  # written links, kept out of the bare-URL pass
+            links.append(f'<a href="{m.group(2)}">{m.group(1)}</a>')
+            return f"\0{len(links) - 1}\0"
+
+        part = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", keep, part)
+        part = re.sub(r"https?://[^\s<>()]*[^\s<>().,;:]", lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>', part)
+        part = re.sub(r"\*([^*\s][^*]*?)\*", r"<em>\1</em>", part)
+        out.append(re.sub(r"\0(\d+)\0", lambda m: links[int(m.group(1))], part))
+    return "".join(out)
+
+
+def _list_html(items: list[list]) -> str:
+    """Nested ul/ol from (indent, kind, text) items; deeper items belong to the item above them."""
+    parts, i = [], 0
+    while i < len(items):
+        indent, _, text = items[i]
+        j = i + 1
+        while j < len(items) and items[j][0] > indent:
+            j += 1
+        parts.append(f"<li>{_inline(text)}{_list_html(items[i + 1:j]) if j > i + 1 else ''}</li>")
+        i = j
+    kind = items[0][1]
+    return f"<{kind}>{''.join(parts)}</{kind}>"
+
+
+def description_html(readme_md: str) -> str:
+    """The deposit README (Markdown, :func:`readme`) as HTML for the Description field of the Zenodo record.
+
+    The title line is left out (Zenodo shows the record's title); sections become h2, the contents table a table,
+    lists ul/ol (wrapped lines and nested items as in the README), other blocks paragraphs.  Only ZENODO_TAGS.
+    """
+    lines = readme_md.splitlines()
+    if lines and lines[0].startswith("# "):
+        lines = lines[1:]
+    out = []
+    for block in re.split(r"\n\s*\n", "\n".join(lines).strip()):
+        rows = block.splitlines()
+        if block.startswith("## "):
+            out.append(f"<h2>{_inline(block[3:].strip())}</h2>")
+        elif all(r.startswith("|") for r in rows):
+            cells = [[c.strip() for c in r.strip().strip("|").split("|")] for r in rows
+                     if not re.fullmatch(r"\|[-| :]+\|", r.strip())]
+            body = "".join("<tr>" + "".join(f"<{t}>{_inline(c)}</{t}>" for c in row) + "</tr>"
+                           for t, row in [("th", cells[0])] + [("td", r) for r in cells[1:]])
+            out.append(f"<table><tbody>{body}</tbody></table>")
+        elif LIST_ITEM.match(rows[0]):
+            items: list[list] = []
+            for r in rows:
+                m = LIST_ITEM.match(r)
+                if m:
+                    items.append([len(m.group(1)), "ol" if m.group(2)[0].isdigit() else "ul", m.group(3)])
+                else:
+                    items[-1][2] += " " + r.strip()
+            out.append(_list_html(items))
+        else:
+            out.append(f"<p>{_inline(' '.join(r.strip() for r in rows))}</p>")
+    return "\n".join(out) + "\n"
 
 
 def install(tmp: Path, out: Path) -> None:
@@ -677,7 +755,9 @@ def build(out: Path, version: str, disclosure: bool = True) -> list[tuple[str, s
         for name, entries, what, lic in archives:
             write_zip(tmp / name, entries)
             rows.append((name, what, (tmp / name).stat().st_size, lic, md5(tmp / name)))
-        (tmp / "README.md").write_text(readme(version, rows), encoding="utf-8")
+        text = readme(version, rows)
+        (tmp / "README.md").write_text(text, encoding="utf-8")
+        (tmp / "description.html").write_text(description_html(text), encoding="utf-8")
         (tmp / "MD5SUMS").write_text("".join(f"{h}  {n}\n" for n, _, _, _, h in rows))
         install(tmp, out)
     finally:
@@ -700,7 +780,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"STOPPED: {err}\nNothing was written; {args.out} is unchanged.") from None
     for n, _, size, _, h in rows:
         print(f"{h}  {human(size):>9}  {n}")
-    print(f"wrote {len(rows)} archives, README.md and MD5SUMS to {args.out}")
+    print(f"wrote {len(rows)} archives, README.md, description.html and MD5SUMS to {args.out}")
 
 
 if __name__ == "__main__":
