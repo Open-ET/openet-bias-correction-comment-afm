@@ -29,8 +29,10 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
   - `openet_daily.csv`: site, date, `et_ensemble`, `eto`, `pr`; mm/d, 2016-01-01 to
     2025-07-31, at US-UiC, US-UTJ and the seven towers shared with the benchmark (ETo and
     precipitation at US-UiC and US-UTJ only).
-  - `manifest.json`: request log (endpoint, file, status, UTC time). The API key is never
-    written.
+  - `manifest.json`: request log (endpoint, parameters including the collection version,
+    tag, site or sites, rows, status and UTC time; upload entries name the file; requests
+    made after the 15 October 2026 extraction also log the md5 of the boxes' GeoJSON,
+    `geojson_md5`). The API key is never written.
   - `derived/` (OpenET values, not deposited), written by
     `scripts/12_openet_api_analysis.py`: `go26_sites_full.csv` (the full per-tower table,
     with the zero-fill predictions and daily-based means), `go26_figure_check_all.csv` and
@@ -46,7 +48,8 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
   UTC. OpenET revises its collections, so a new extraction can differ slightly; if the md5
   sums of `openet_monthly.csv`, `openet_daily.csv`, `sites.csv` and `sites_200m.geojson`
   match those recorded in `results/openet_api_go26_summary.json` (`provenance`),
-  `results/openet_api_*` and `figures/fig2_*` are reproduced exactly.
+  `results/openet_api_*` (except `openet_api_eto_ee_check.csv`, which queries the live Earth
+  Engine collection) and `figures/fig2_*` are reproduced exactly.
 
   ETo is OpenET's bias-corrected gridMET ETo (Volk et al., 2026); precipitation is
   gridMET. OpenET data are subject to the OpenET Terms of Service
@@ -66,8 +69,10 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
     `page_md5` in `results/ameriflux_public_provenance.json`) and the number of addresses
     removed (`emails_removed`).
 
-  AmeriFlux content: the metadata are CC BY 4.0 under the AmeriFlux data policy; the site
-  pages are included for provenance.
+  The metadata (the summary and the web-service responses) are CC BY 4.0 under the
+  AmeriFlux data policy. The site pages are AmeriFlux website content (© LBNL / UC Regents;
+  the photos on them carry their own terms), cached for provenance only; they are not
+  covered by this repository's licences.
 * `ameriflux_base/`: AmeriFlux BASE files of the 22 GO26 towers, read only by
   `scripts/10_reconstruct_go26_observed_et.py` (not deposited):
   - `AMF_<SITE>_BASE-BADM_<version>.zip`: the BASE-BADM product as downloaded (BASE CSV
@@ -83,7 +88,9 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
   Golkar and de Oliveira (2026, Agric. For. Meteorol. 391, 111524) and evaluation of OpenET
   at AmeriFlux cropland sites", which AmeriFlux sends to the site teams. To get them you need
   an AmeriFlux account: download the versions in `config/go26_sites.csv` (column
-  `base_version_go26`) from https://ameriflux.lbl.gov, or run script 10 with `--download
+  `base_version_go26`) from https://ameriflux.lbl.gov and extract the BASE CSV of each
+  `AMF_<SITE>_BASE-BADM_<version>.zip` into this folder (script 10 reads only the CSV files),
+  or run script 10 with `--download
   --agree-policy` and `AMERIFLUX_USER_ID` and `AMERIFLUX_USER_EMAIL` set in the environment
   or in `.env` (it fetches the current versions; AmeriFlux logs each download). CC BY 4.0
   under the AmeriFlux CC-BY-4.0 data policy, but not redistributed here; cite each site's

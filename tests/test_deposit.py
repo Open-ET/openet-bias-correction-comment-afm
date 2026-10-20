@@ -366,3 +366,44 @@ def test_description_html_converts_the_readme_markdown(s13):
         "<ol><li>First, wrapped onto two lines:<ul><li>nested one wrapped;</li><li>nested two</li></ul></li>"
         "<li>Second</li></ol>\n"
         "<ul><li>bullet</li></ul>\n")
+    # a quote or closing punctuation right after a bare URL is not part of the link
+    assert s13._inline('attribute "OpenET, https://openetdata.org" wherever') == (
+        'attribute "OpenET, <a href="https://openetdata.org">https://openetdata.org</a>" wherever')
+
+
+def test_figure_1_of_the_comment_is_required(s13, tmp_path):
+    root = _repo(s13)
+    out = tmp_path / "deposit"
+    s13.build(out, "1.0.0")
+    before = _snapshot(out)
+    (root / "figures/fig_table1_reconstruction.png").unlink()
+    with pytest.raises(s13.DepositError, match="figures/fig_table1_reconstruction.png"):
+        s13.build(out, "1.0.1")
+    assert _snapshot(out) == before
+
+
+def test_rebuild_from_an_unzipped_deposit_reads_benchmark_site_plots(s13, tmp_path):
+    root = _repo(s13)
+    s13.build(tmp_path / "first", "1.0.0")
+    with zipfile.ZipFile(tmp_path / "first" / "benchmark_site_plots.zip") as z:
+        z.extractall(root)  # the deposit layout: benchmark_site_plots/ at the root ...
+    for part in s13.SITE_PLOT_PARTS:  # ... and no figures/site_plots/
+        for f in (root / s13.SITE_PLOTS / part).iterdir():
+            f.unlink()
+    s13.build(tmp_path / "again", "1.0.0")
+    first, again = (zipfile.ZipFile(tmp_path / d / "benchmark_site_plots.zip") for d in ("first", "again"))
+    assert sorted(again.namelist()) == sorted(first.namelist())
+    assert all(again.read(n) == first.read(n) for n in first.namelist())
+
+
+def test_site_plots_come_from_figures_when_both_folders_exist(s13, tmp_path):
+    root = _repo(s13)
+    s13.build(tmp_path / "first", "1.0.0")
+    with zipfile.ZipFile(tmp_path / "first" / "benchmark_site_plots.zip") as z:
+        z.extractall(root)  # a stale copy of the deposit layout next to figures/site_plots/
+    (root / "benchmark_site_plots/static/US-ARM_summary.png").write_bytes(b"stale")
+    (root / "benchmark_site_plots/html/US-ARM_plots.html").write_text("stale")
+    s13.build(tmp_path / "again", "1.0.0")
+    with zipfile.ZipFile(tmp_path / "again" / "benchmark_site_plots.zip") as z:
+        assert z.read("benchmark_site_plots/static/US-ARM_summary.png") == b"US-ARM.png"
+        assert z.read("benchmark_site_plots/html/US-ARM_plots.html") == b"<html>US-ARM</html>\n"

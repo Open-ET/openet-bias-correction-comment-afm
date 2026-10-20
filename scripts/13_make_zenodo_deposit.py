@@ -7,7 +7,7 @@ md5 sums), description.html (README.md as HTML for the Description field of
 the Zenodo record) and MD5SUMS:
 
   openet-bias-correction-comment-afm-<version>.zip   the files git tracks: code, tests, docs, metadata
-  config.zip                                         GO26 Tables 1 and 3, V24 station list
+  config.zip                                         GO26 Tables 1 and 3, site notes, V24 stations
   data_external_golkar_deoliveira_2026.zip           GO26 Figs. 2, 8 and S2 (CC BY 4.0)
   data_raw_ameriflux_public.zip                      cached public AmeriFlux metadata (scripts/11)
   results.zip                                        derived results, with results/README.txt, a
@@ -40,9 +40,11 @@ then, other files in --out are kept.
 
 The zips are deterministic (entries sorted by name, fixed timestamps,
 permissions and creator fields, no .DS_Store or __pycache__): a rebuild from
-unchanged files with the same Python and zlib (environment.yml; the README
-records both) gives the same md5 sums, since zlib's deflate output can differ
-between versions.  Run it after the pipeline (README.md, Pipeline).
+unchanged files with the same Python and zlib versions (the README records both;
+environment.yml pins Python, not zlib) gives the same md5 sums, since zlib's
+deflate output can differ between versions.  Run it after the pipeline
+(README.md, Pipeline).  In an unzipped deposit the site plots are read from
+benchmark_site_plots/ when figures/site_plots/ is absent.
 
 Usage:
   python scripts/13_make_zenodo_deposit.py [--out zenodo] [--version 1.0.0] [--no-disclosure-check]
@@ -76,8 +78,11 @@ AFFILIATION = "Desert Research Institute, Reno, Nevada, USA"
 AUTHORS = "Yeonuk Kim, Sayantan Majumdar, John M. Volk, Peter ReVelle, Todd G. Caldwell, Justin L. Huntington"
 # archive name -> (folder in the archive, relative to ROOT; contents; licence)
 FOLDERS = {
-    "config.zip": ("config", "GO26 Tables 1 and 3 (sites, periods, mean observed ET, BASE DOIs and the versions GO26 "
-                             "cite), Volk et al. (2024) station list", "CC BY 4.0"),
+    "config.zip": ("config", "GO26 Table 1 (sites, periods, mean observed ET) with the BASE DOIs and versions from "
+                             "GO26's reference list, GO26 Table 3 (BWk from its Sections 3.1-3.2), our site notes "
+                             "(sources in the evidence column), and the 152 stations of Volk et al. (2024) from "
+                             "Station_metadata.xlsx of Volk et al. (2023d)",
+                   "CC BY 4.0 (GO26; Volk et al., 2023d; site notes: this work)"),
     "data_external_golkar_deoliveira_2026.zip": (
         "data/external/golkar_deoliveira_2026", "GO26 Figs. S2 and 8 (digitized by scripts/04) and Fig. 2, "
                                                 "unchanged from the article", "CC BY 4.0 (Golkar and de Oliveira, 2026)"),
@@ -85,15 +90,17 @@ FOLDERS = {
         "data/raw/ameriflux_public", "cached public AmeriFlux metadata read by scripts/11: BASE variable-availability "
                                      "summary (amerifluxr, commit 7319e63), web-service responses and site pages "
                                      "(e-mail addresses removed), with access times and md5 sums",
-        "AmeriFlux content: metadata CC BY 4.0 (AmeriFlux data policy); site pages included (redacted) for "
-        "provenance"),
+        "metadata (summary, web-service responses): CC BY 4.0 (AmeriFlux data policy); site pages: AmeriFlux "
+        "website content (© LBNL / UC Regents), cached for provenance only, not licensed by this deposit"),
     "results.zip": ("results", "derived tables (CSV, JSON) of scripts 02 (Earth Engine ETo check) and 04-12, with "
                                "README.txt, a one-line guide to every file",
                     "CC BY 4.0, except OpenET-derived statistics (OpenET Terms of Service)"),
     "figures.zip": ("figures", "Figure 1 of the comment (fig_table1_reconstruction: GO26 Table 1 against the site "
                                "means rebuilt from BASE; scripts/08), further figures of the analysis (fig1-fig5) "
                                "(PNG 600 dpi, PDF), and QC overlays of the digitization",
-                    "CC BY 4.0, except panels b-d of fig2 (OpenET-derived: OpenET Terms of Service)"),
+                    "CC BY 4.0, except panels b-d of fig2 (OpenET-derived: OpenET Terms of Service); Figure 1 of "
+                    "the comment and the observed ET of fig2 panel d derive from AmeriFlux BASE data (cite the site "
+                    "BASE DOIs)"),
     "benchmark_site_plots.zip": (
         "benchmark_site_plots", "plots of the seven towers shared with GO26 from the Volk et al. (2023c) benchmark, "
                                 "built from `figures/site_plots/` (scripts/03): the benchmark's Bokeh pages (`html/`) "
@@ -102,7 +109,7 @@ FOLDERS = {
 }
 
 FIGURES = ("fig1_US-UTJ_zero_runs", "fig2_zero_fill_bias_and_site_ET", "fig3_site_map", "fig4_shared_site_daily",
-           "fig5_shared_sites")
+           "fig5_shared_sites", "fig_table1_reconstruction")  # the last is Figure 1 of the comment
 QC = ("figures/qc/digitized_US-UTJ_overlay.png", "figures/qc/digitized_US-UiC_overlay.png")
 LEFT_OUT_OF_FIGURES = ("figures/site_plots/", "figures/.gitkeep")  # site plots: benchmark_site_plots.zip
 SITE_PLOTS = "figures/site_plots"  # written by scripts/03_site_plots.py
@@ -181,8 +188,12 @@ FILE_NOTES = {
         "records, and gap-filled by the mean diurnal variation, *_mdv), of Bowen-ratio closed ET as GO26 state it "
         "(flux-data-qaqc's 'br' correction; unfilled *_br_fdq, gap-filled *_br_fdq_mdv), of EBR (its 'ebr' "
         "correction) and of screened and unscreened Bowen-ratio closed ET, "
-        "Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 "
-        "(diff_*), implied zero fractions; *_qc: LE flagged 2 in LE_SSITC_TEST removed (AmeriFlux BASE derivative)",
+        "Bowen-ratio failure counts and extreme days, differences from GO26 Table 1 (diff_* = rebuilt value minus "
+        "GO26's Table 1 mean, mm/d, the opposite sign to mean_diff_go26_minus_base in "
+        "go26_reconstructed_figure_check.csv), implied zero fractions (f_implied, f_implied_unfilled = 1 - Table 1 "
+        "mean / the gap-filled or unfilled valid-day mean); mean_et_hh_sum_zero_filled_unclosed is the Table 1 "
+        "reproduction (zero-filled sub-daily sums over calendar days), mean_et_unclosed_zero_filled the valid-day ET "
+        "with the other days set to 0; *_qc: LE flagged 2 in LE_SSITC_TEST removed (AmeriFlux BASE derivative)",
     "go26_reconstructed_daily.csv":
         "scripts/10: per tower and day: shares of records with LE and with all energy-balance terms, valid-day ET "
         "(unfilled and gap-filled), Bowen-ratio, screened and EBR closure factors, Bowen-ratio closed ET as GO26 "
@@ -196,10 +207,11 @@ FILE_NOTES = {
         "than half of the records or without LE, exact-zero days (AmeriFlux BASE derivative)",
     "go26_reconstructed_openet_bias.csv":
         "scripts/10: OpenET ensemble minus observed ET rebuilt from BASE by GO26 zone and season: zero-filled Table 1 "
-        "sums over all site-months with OpenET (next to GO26's reported bias) and, on identical days and "
-        "site-months (>= 20 valid days with all energy-balance terms), zero-filled ET, GO26's processing as they "
-        "state it (valid-day and Bowen-ratio closed ET), and gap-filled ET unclosed and closed with the Bowen ratio as "
-        "GO26 state it, EBR or the screened Bowen ratio; OpenET values "
+        "sums over all site-months with OpenET (next to GO26's reported bias) and, on identical site-months (>= 20 "
+        "days on which every valid-day variant has a value: all energy-balance terms, the day kept by flux-data-qaqc's "
+        "Bowen-ratio limits and an EBR factor), zero-filled sums over all days of those months and, on identical "
+        "days, GO26's processing as they state it (valid-day and Bowen-ratio closed ET), and gap-filled ET unclosed "
+        "and closed with the Bowen ratio as GO26 state it, EBR or the screened Bowen ratio; OpenET values "
         "withheld where a single month or any sum or difference over fewer than 6 site-months could be solved for "
         "(OpenET-derived; observed ET: AmeriFlux BASE derivative)",
     "go26_reconstructed_winter.csv":
@@ -256,8 +268,11 @@ FILE_NOTES = {
         "coverage; OpenET Phase II bias, RMSE and R2 against closed, unclosed and Bowen-ratio closed ET (daily and "
         "monthly); GO26's zone results (Table 3)",
     "shared_site_monthly_pairs.csv":
-        "scripts/06: monthly benchmark closed ET (et_corr, mm/month) with gap-filled and valid-day counts and the "
-        "OpenET Phase II ensemble (Volk et al., 2023d) at the seven shared towers",
+        "scripts/06: monthly benchmark closed ET (et_corr, mm/month) with the days in the month (n_days), the days "
+        "with closed ET, measured or gap-filled (n_et, equal to n_days in every month kept), the gap-filled days "
+        "(n_gap; measured days = n_days - n_gap) and the "
+        "OpenET Phase II ensemble (Volk et al., 2023d) at the six shared towers with qualifying months (all but "
+        "US-xSL)",
     "site_koppen_check.csv":
         "scripts/09: GO26's Koppen class of each tower against the Rubel et al. (2017) grid, with its map category",
 }
@@ -274,7 +289,8 @@ writes it and what it holds. Read the CSV files with pandas.read_csv(path, comme
 go26_* files other than go26_observed_et_reconstruction.csv start with '#' lines (definitions,
 licence, site DOIs).
 
-Licences: CC BY 4.0 (LICENSE-data.md), except the OpenET-derived statistics in openet_api_* and
+Licences: CC BY 4.0 (LICENSE-data.md), except the OpenET-derived statistics in openet_api_*
+(other than openet_api_uic_winter.csv, which holds no OpenET values) and
 go26_reconstructed_openet_bias.csv: OpenET data (OpenET, https://openetdata.org), subject to the
 OpenET Terms of Service and not covered by CC BY 4.0; attribute OpenET wherever they are shown.
 The go26_* files (scripts/10) derive from AmeriFlux BASE data (CC BY 4.0, AmeriFlux CC-BY-4.0
@@ -355,10 +371,18 @@ def results_readme(names: list[str]) -> str:
 
 
 def site_plot_entries(problems: list[str]) -> list[tuple[str, Path | bytes]]:
-    """figures/site_plots/html/ and static/ as benchmark_site_plots/html/ and static/, plus README.txt."""
+    """figures/site_plots/html/ and static/ as benchmark_site_plots/html/ and static/, plus README.txt.
+
+    An unzipped deposit has benchmark_site_plots/ instead of figures/site_plots/: when no part of figures/site_plots/
+    has files, both parts are read from benchmark_site_plots/ (its README.txt is written anew).  A repository with
+    both always uses figures/site_plots/, so fresh and stale plots are never mixed."""
     entries: list[tuple[str, Path | bytes]] = []
+    base = SITE_PLOTS
+    if not any(folder_files(f"{SITE_PLOTS}/{part}") for part in SITE_PLOT_PARTS) and \
+            any(folder_files(f"benchmark_site_plots/{part}") for part in SITE_PLOT_PARTS):
+        base = "benchmark_site_plots"  # an unzipped deposit
     for part in SITE_PLOT_PARTS:
-        src = f"{SITE_PLOTS}/{part}"
+        src = f"{base}/{part}"
         files = folder_files(src)
         if not files:
             problems.append(f"{src}/ is missing or empty: run scripts/03_site_plots.py (--no-render without Chromium)")
@@ -366,7 +390,7 @@ def site_plot_entries(problems: list[str]) -> list[tuple[str, Path | bytes]]:
     have = {a for a, _ in entries}
     need = [f"benchmark_site_plots/html/{s}_plots.html" for s in SHARED]
     need += [f"benchmark_site_plots/static/{s}_summary.{e}" for s in SHARED for e in ("pdf", "png")]
-    lost = [n.replace("benchmark_site_plots/", f"{SITE_PLOTS}/", 1) for n in need if n not in have]
+    lost = [n.replace("benchmark_site_plots/", f"{base}/", 1) for n in need if n not in have]
     if lost and entries:
         problems.append(f"{len(lost)} site plots of scripts/03 are missing: {', '.join(lost[:4])}"
                         + (" ..." if len(lost) > 4 else ""))
@@ -422,7 +446,7 @@ def collect(version: str, exclude=(), disclosure: bool = True) -> list[tuple[str
                 ff = [f for f in ff if not f.startswith(LEFT_OUT_OF_FIGURES)]
                 need = [f"figures/{f}.{e}" for f in FIGURES for e in ("pdf", "png")] + list(QC)
                 if ff and (lost := [f for f in need if f not in ff]):
-                    problems.append(f"figures missing: {', '.join(lost)} (scripts/04, 06, 08, 09)")
+                    problems.append(f"figures missing: {', '.join(lost)} (scripts/04, 06, 08 after 10, 09)")
             if name == "results.zip":
                 ff = [f for f in ff if f != "results/README.txt"]  # written anew below
             entries = [(f, ROOT / f) for f in ff]
@@ -538,14 +562,16 @@ Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: {REPO_URL}
 Reproducible analysis for the comment *Comment on Golkar and de Oliveira (2026): Missing eddy
 covariance observations undermine reported OpenET biases* (Kim et al., submitted to
 *Agricultural and Forest Meteorology*) on Golkar, M.K., de Oliveira, L.A., 2026, Diagnosing and
-correcting OpenET satellite evapotranspiration across US climate zones, *Agric. For. Meteorol.*
-391, 111524, https://doi.org/10.1016/j.agrformet.2026.111524 (GO26, CC BY 4.0).
+correcting OpenET satellite evapotranspiration across US climate zones: Error decomposition,
+explainable AI, and uncertainty quantification, *Agric. For. Meteorol.* 391, 111524,
+https://doi.org/10.1016/j.agrformet.2026.111524 (GO26, CC BY 4.0).
 
-The comment shows that missing eddy covariance observations were effectively treated as zero ET in GO26.
-The deposit holds the code (a snapshot of the GitHub repository) and its inputs and outputs: the
-digitized GO26 figures, the comparison with the Volk et al. (2023a) benchmark, AmeriFlux's public
-data-availability records, observed ET rebuilt from the AmeriFlux BASE files of GO26's 22 towers,
-the current OpenET collection at GO26's towers and the benchmark cropland stations, a train/test
+The comment shows that missing eddy covariance observations were effectively treated as zero ET
+in GO26. The deposit holds the code (a snapshot of the GitHub repository) and its inputs and
+outputs: the digitized GO26 figures, the comparison with the Volk et al. (2023a) benchmark,
+AmeriFlux's public data-availability records, observed ET rebuilt from the AmeriFlux BASE files
+of GO26's 22 towers, statistics of the current OpenET collection (2.1) at GO26's towers and the
+benchmark cropland stations (the OpenET extracts themselves are not deposited), a train/test
 leakage experiment, Figure 1 of the comment and the further figures of the analysis.
 
 Data dates (UTC, from the provenance files):
@@ -570,8 +596,9 @@ Every archive except `{code}` holds paths relative to the repository root.
 
 Verify the downloads with `md5sum -c MD5SUMS` (Linux) or `md5 -r *.zip` (macOS; compare with
 `MD5SUMS`). The zips are deterministic: `scripts/13_make_zenodo_deposit.py` rebuilds them with
-the same md5 sums from unchanged files with the same Python and zlib (`environment.yml`; built
-with {built}), since zlib's compressed output can differ between versions. Without the OpenET
+the same md5 sums from unchanged files with the same Python and zlib versions (built with
+{built}; `environment.yml` pins Python, not zlib), since zlib's compressed output can differ
+between versions. Without the OpenET
 extracts, pass `--no-disclosure-check`: before building, the script requires the record of the
 joint OpenET disclosure check (`scripts/14`), which needs them.
 
@@ -590,13 +617,17 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
      (doi:10.5281/zenodo.7636781, doi:10.5281/zenodo.10119477): `python scripts/01_download_data.py`;
    - the OpenET API extracts (collection 2.1, 200 m x 200 m boxes as in GO26): a free OpenET API
      key in `OPENET_API_KEY`, then `python scripts/02_download_openet_api.py` (24 requests).
-     Without a key, skip scripts 02 and 12: their outputs are in `results/`. OpenET revises its
+     Without a key, skip scripts 02, 12 and 14 (their outputs are in `results/`) and build the
+     deposit with `scripts/13 --no-disclosure-check`. OpenET revises its
      collections, so a new extraction can differ slightly; if the md5 sums of the raw extracts
      match those recorded in `results/openet_api_go26_summary.json` (`provenance`: `md5_openet_monthly.csv`,
      `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*`
-     and `figures/fig2_*` are reproduced exactly;
+     (except `openet_api_eto_ee_check.csv`, which queries the live Earth Engine collection) and
+     `figures/fig2_*` are reproduced exactly;
    - optionally, AmeriFlux BASE files for `scripts/10` (AmeriFlux account; the versions GO26 cite
-     are in `config/go26_sites.csv`); without them skip `scripts/10`, which would otherwise
+     are in `config/go26_sites.csv`; extract the BASE CSV of each
+     `AMF_<SITE>_BASE-BADM_<version>.zip` into `data/raw/ameriflux_base/`, as `scripts/10` reads
+     only the CSV files); without them skip `scripts/10`, which would otherwise
      overwrite `results/go26_observed_et_reconstruction.csv` with status rows.
 4. Run the numbered scripts as listed in `README.md` (Pipeline). `scripts/03` renders PNG
    snapshots of the benchmark's Bokeh pages with Playwright (`python -m playwright install
@@ -604,7 +635,8 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
    BokehJS 2.1.1 from cdn.bokeh.org, so open them online. `results/` and `figures/` in this
    deposit are the outputs used in the comment; a rerun with the same inputs and environment
    reproduces them (the figure scripts rerun themselves with PYTHONHASHSEED=0, which makes the
-   PDFs byte-reproducible).
+   PDFs byte-reproducible on the same platform and fonts; they were made on macOS arm64 with
+   its system Helvetica).
 
 ## Licences
 
@@ -613,23 +645,33 @@ joint OpenET disclosure check (`scripts/14`), which needs them.
   OpenET-derived statistics below.
 - `benchmark_site_plots/`: CC BY 4.0; `html/` are the Bokeh pages of Volk et al. (2023c),
   unchanged; `static/` is this work.
-- OpenET-derived statistics (`results/openet_api_*`, `results/go26_reconstructed_openet_bias.csv`,
-  panels b-d of `figures/fig2_*`): OpenET data, subject to the OpenET Terms of Service
+- OpenET-derived statistics (`results/openet_api_*`, except `results/openet_api_uic_winter.csv`,
+  which holds no OpenET values; `results/go26_reconstructed_openet_bias.csv`; panels b-d of
+  `figures/fig2_*`): OpenET data, subject to the OpenET Terms of Service
   (https://etdata.org/terms-of-service/); attribute "OpenET, https://openetdata.org" wherever they
   are shown. They are not covered by CC BY 4.0.
 - AmeriFlux BASE derivatives (`results/go26_base_version_check.csv`,
   `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_daily.csv`,
   `results/go26_reconstructed_figure_check.csv`, `results/go26_reconstructed_winter.csv`, and the
   observed ET of `results/go26_reconstructed_openet_bias.csv`, whose OpenET values are
-  OpenET-derived; Figure 1 of the comment, `figures/fig_table1_reconstruction.*`): CC BY 4.0 under
+  OpenET-derived; the observed ET behind panel d of `figures/fig2_*`; Figure 1 of the comment,
+  `figures/fig_table1_reconstruction.*`): CC BY 4.0 under
   the AmeriFlux CC-BY-4.0 data policy; cite each site's BASE DOI
   (`config/go26_sites.csv`; also in the `base_doi` column of
   `results/go26_observed_et_reconstruction.csv` and the header of the daily file).
-- AmeriFlux public metadata (`data/raw/ameriflux_public/`): AmeriFlux content; the metadata are
-  CC BY 4.0 under the AmeriFlux data policy; the site pages are included, with the e-mail
-  addresses removed, for provenance. `results/ameriflux_*` derive from them (CC BY 4.0; attribute
-  AmeriFlux and the site teams).
+- AmeriFlux public metadata (`data/raw/ameriflux_public/`): the metadata (the amerifluxr summary and
+  the web-service responses) are CC BY 4.0 under the AmeriFlux data policy. The site pages
+  (`siteinfo_*.html`) are AmeriFlux website content (© LBNL / UC Regents; the photos on them carry
+  their own terms), cached unchanged except for the removed e-mail addresses, for provenance only;
+  they are not covered by the licences of this deposit. `results/ameriflux_*` derive from the
+  metadata (CC BY 4.0; attribute AmeriFlux and the site teams).
 - GO26 figures (`data/external/golkar_deoliveira_2026/`): CC BY 4.0, Golkar and de Oliveira (2026).
+- Map layers of `figures/fig3_*` and `results/site_koppen_check.csv`: the Koppen-Geiger grid of
+  Rubel et al. (2017), via `kgcpy` (BSD); U.S. Census Bureau state boundaries, shipped with
+  `basemap-data` (MIT); GSHHG version 2.3.6 lakes (Wessel and Smith, 1996), shipped with
+  `basemap-data` (LGPL-3.0-or-later).
+- `results/digitized_*` include GO26's plotted OpenET line (digitized from their CC BY 4.0
+  figures): attribute GO26 and "OpenET, https://openetdata.org" wherever it is shown.
 - The AmeriFlux sites and the funding of AmeriFlux data resources are acknowledged below
   (Acknowledgements), as the AmeriFlux CC-BY-4.0 data policy asks.
 
@@ -650,18 +692,23 @@ Please cite this deposit as
 
 The code is also on GitHub, {REPO_URL}, of which the code archive is a snapshot (`CITATION.cff`
 there and in the archive). Please also cite the comment once published, GO26,
-Volk et al. (2023a, 2023c, 2023d, 2024), Volk et al. (2026) for the bias-corrected gridMET reference
-ET, flux-data-qaqc (Volk et al., 2021; version 0.5.0) for the energy balance closure, OpenET (Melton
-et al., 2022), and the AmeriFlux BASE DOIs of the sites
-(`config/go26_sites.csv`).
+Volk et al. (2023a, 2023b, 2023c, 2023d, 2024), Volk et al. (2026) for the bias-corrected gridMET
+reference ET, flux-data-qaqc (Volk et al., 2021; version 0.5.0) for the energy balance closure,
+Twine et al. (2000) for the Bowen-ratio closure as GO26 describe it, OpenET (Melton et al.,
+2022), Rubel et al. (2017) for the Koppen-Geiger grid, Wessel and Smith
+(1996) for the lakes on the site map, and the AmeriFlux BASE DOIs of the sites
+(`config/go26_sites.csv`). The full references are in `README.md` in the code archive.
 
 ## Related identifiers
 
 - Comment on: https://doi.org/10.1016/j.agrformet.2026.111524
 - Source code: {REPO_URL}
 - Data used: https://doi.org/10.5281/zenodo.7636781, https://doi.org/10.5281/zenodo.10119477
-- References: https://doi.org/10.1038/s44221-023-00181-7, https://doi.org/10.1016/j.agwat.2026.110647,
-  https://doi.org/10.21105/joss.03418
+- References: https://doi.org/10.1016/j.agrformet.2023.109307, https://doi.org/10.1016/j.dib.2023.109274,
+  https://doi.org/10.1038/s44221-023-00181-7, https://doi.org/10.1016/j.agwat.2026.110647,
+  https://doi.org/10.21105/joss.03418, https://doi.org/10.1111/1752-1688.12956,
+  https://doi.org/10.1127/metz/2016/0816, https://doi.org/10.1029/96JB00104,
+  https://doi.org/10.1016/S0168-1923%2800%2900123-4
 
 ## Use of AI tools
 
@@ -694,7 +741,8 @@ def _inline(text: str) -> str:
             return f"\0{len(links) - 1}\0"
 
         part = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", keep, part)
-        part = re.sub(r"https?://[^\s<>()]*[^\s<>().,;:]", lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>', part)
+        url = r"""https?://[^\s<>()"']*[^\s<>().,;:"']"""  # a quote or closing punctuation ends the URL
+        part = re.sub(url, lambda m: f'<a href="{m.group(0)}">{m.group(0)}</a>', part)
         part = re.sub(r"\*([^*\s][^*]*?)\*", r"<em>\1</em>", part)
         out.append(re.sub(r"\0(\d+)\0", lambda m: links[int(m.group(1))], part))
     return "".join(out)

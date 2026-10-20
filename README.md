@@ -38,7 +38,7 @@ which are not tracked in git:
 
 | Folder | Contents |
 |---|---|
-| `config/` | GO26 Table 1 (sites, study periods, mean observed ET, BASE DOIs and versions) and Table 3, site notes, the Volk et al. (2024) station list |
+| `config/` | GO26 Table 1 (sites, study periods, mean observed ET) with the BASE DOIs and versions from GO26's reference list, GO26 Table 3 (and the BWk values from its Sections 3.1-3.2), our site notes (their sources in the `evidence` column), and the 152 stations of Volk et al. (2024) from `Station_metadata.xlsx` of Volk et al. (2023d) |
 | `data/external/golkar_deoliveira_2026/` | GO26 Figs. 8 and S2 (CC BY 4.0), digitized by `scripts/04`, and Fig. 2, kept for the visual check of its zero-valued observations (Section 1 of the comment) |
 | `data/raw/ameriflux_public/` | cached public AmeriFlux metadata read by `scripts/11` (site pages and web-service responses change over time; the site pages without the site teams' e-mail addresses) |
 | `results/` | derived tables (CSV, JSON) of scripts 02 (Earth Engine ETo check) and 04-12; in the deposit with `results/README.txt`, a one-line guide to every file |
@@ -53,16 +53,16 @@ stops, writing nothing, if one is missing or incomplete; it then builds the depo
 temporary folder next to `zenodo/` and moves it into place, so a failed build leaves the
 previous deposit as it was. The zips are deterministic (sorted entries, fixed timestamps,
 permissions and creator fields), so a rebuild from unchanged files with the same Python and
-zlib (`environment.yml`) gives the same md5 sums. Check a download with `md5sum -c MD5SUMS`
+zlib versions gives the same md5 sums (`environment.yml` pins Python, not zlib; the deposit
+README records both versions). Check a download with `md5sum -c MD5SUMS`
 (macOS: `md5 -r *.zip`, and compare with `MD5SUMS`).
 
 Download the deposit and copy `config/`, `data/external/golkar_deoliveira_2026/`,
-`data/raw/ameriflux_public/`, `results/` and `figures/` into the root of your clone. Most
-scripts need `config/`;
-`results/` holds the outputs that later scripts read (for example the digitized series
-used by `scripts/08` and `scripts/12`). The other downloads in `data/raw/` are not
-deposited; the scripts below recreate them (the OpenET extracts with your own API key, the
-BASE files with an AmeriFlux account).
+`data/raw/ameriflux_public/`, `results/`, `figures/` and `benchmark_site_plots/` into the
+root of your clone. Most scripts need `config/`; `results/` holds the outputs that later
+scripts read (for example the digitized series used by `scripts/08` and `scripts/12`). The
+other downloads in `data/raw/` are not deposited; the scripts below recreate them (the
+OpenET extracts with your own API key, the BASE files with an AmeriFlux account).
 
 ## Setup
 
@@ -71,7 +71,7 @@ git clone https://github.com/Open-ET/openet-bias-correction-comment-afm.git
 cd openet-bias-correction-comment-afm
 conda env create -f environment.yml   # exact versions used for the published numbers
 conda activate etcomment
-python -m pytest -q                   # unit tests on synthetic data: offline, a few seconds
+python -m pytest -q                   # unit tests on synthetic data: offline, under a minute
 ```
 
 Without conda, `python -m pip install -e ".[dev]"` installs the package with mostly unpinned
@@ -99,7 +99,7 @@ AMERIFLUX_USER_EMAIL=...    # scripts/10 --download (optional)
 | # | Data | Access | Script | Stored in |
 |---|---|---|---|---|
 | 1 | Benchmark flux data (Volk et al., 2023c) and OpenET Phase II model ET at its stations (Volk et al., 2023d), Zenodo | public, md5-verified | `01_download_data.py` | `data/raw/` |
-| 2 | OpenET API, collection 2.1: monthly ET (ensemble and six models), ETo and precipitation for 75 boxes, 2016-2025; daily ensemble ET at nine towers | free OpenET account and API key | `02_download_openet_api.py` | `data/raw/openet_api/` |
+| 2 | OpenET API, collection 2.1: monthly ET (ensemble and six models), ETo and precipitation for 75 boxes, 2016-2025; daily ensemble ET at nine towers, and daily ETo and precipitation at US-UiC and US-UTJ | free OpenET account and API key | `02_download_openet_api.py` | `data/raw/openet_api/` |
 | 3 | AmeriFlux public metadata: BASE variable availability (amerifluxr), BASE versions and years | public, no login | `11_ameriflux_availability.py` | `data/raw/ameriflux_public/` |
 | 4 | AmeriFlux BASE files (BASE-BADM) of the 22 GO26 towers, the versions GO26 cite; needed only to rebuild `results/go26_*` | AmeriFlux account; CC BY 4.0, not redistributed | `10_reconstruct_go26_observed_et.py` | `data/raw/ameriflux_base/` |
 | 5 | GO26 Figs. 8 and S2 (digitized) and Fig. 2 (CC BY 4.0) | Zenodo deposit | `04_digitize_afm_figures.py` | `data/external/golkar_deoliveira_2026/` |
@@ -169,7 +169,9 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   `--description`), which AmeriFlux passes on to the site teams;
   `data/raw/ameriflux_base/provenance.json` records versions, md5 sums and access times.
   To rerun, download the versions in `config/go26_sites.csv` (`base_version_go26`,
-  `base_doi`) from https://ameriflux.lbl.gov into `data/raw/ameriflux_base/`, or run
+  `base_doi`) from https://ameriflux.lbl.gov and extract the BASE CSV
+  (`AMF_<SITE>_BASE_<HH|HR>_<version>.csv`) of each `AMF_<SITE>_BASE-BADM_<version>.zip` into
+  `data/raw/ameriflux_base/` (`scripts/10` reads only the CSV files), or run
   `python scripts/10_reconstruct_go26_observed_et.py --download --agree-policy --qc-flags` with
   `AMERIFLUX_USER_ID` and `AMERIFLUX_USER_EMAIL` set; `--agree-policy` confirms that you
   accept the AmeriFlux CC BY 4.0 data policy, and AmeriFlux logs each download. `--download`
@@ -183,7 +185,7 @@ matches the published sum, whatever their names, and downloads them from Zenodo 
   LE, H, NETRAD and G over the half-hours in which all four are valid, its daily factor
   multiplying the daily LE: the Bowen-ratio method as GO26 state it, flux-data-qaqc's `br`
   correction, unscreened, on the valid-day means and on the gap-filled ones; its `ebr`
-  correction as the main variant; our screened Bowen ratio; the unscreened Bowen ratio on
+  correction for reference; our screened Bowen ratio; the unscreened Bowen ratio on
   every day only as a diagnostic), a comparison of the cited files with AmeriFlux's October
   2025 availability summary (the `scripts/11` cache), a day-by-day check of GO26's Figs. 8
   and S2 (digitized by `scripts/04`) and, with the OpenET monthly extract (`scripts/02`), the
@@ -222,11 +224,11 @@ in place.
 | `07_leakage_experiment.py` | benchmark, OpenET Phase II | `results/leakage_experiment*` | about 10 min (two meteorology variants) |
 | `08_make_figures.py` | outputs of 04, 11 and 12, and of 10 for the GO26-tower markers in `fig2_*` and for Figure 1 of the comment; `config/` | `figures/fig1_*`, `figures/fig2_*`, `figures/fig_table1_*` (Figure 1 of the comment: GO26 Table 1 against the site means rebuilt from BASE) | seconds |
 | `09_make_maps.py` | `config/` | `figures/fig3_site_map.*`, `results/site_koppen_check.csv` | seconds |
-| `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 12 min (flux-data-qaqc runs for every site, closure and variant) |
+| `10_reconstruct_go26_observed_et.py` | BASE files in `data/raw/ameriflux_base/`; outputs of 02, 04 and 11; `config/` | `results/go26_observed_et_reconstruction.csv`, `results/go26_reconstructed_*.csv`, `results/go26_base_version_check.csv` | about 20 s |
 | `11_ameriflux_availability.py` | internet on the first run, `config/` | `data/raw/ameriflux_public/`, `results/ameriflux_*` | seconds |
 | `12_openet_api_analysis.py` | outputs of 02, 04, 06 and 11; benchmark; `config/` | `results/openet_api_*`, `data/raw/openet_api/derived/` | seconds |
 | `13_make_zenodo_deposit.py` | the outputs above, `config/`, `data/`, the record of 14 (`--no-disclosure-check` without it) | `zenodo/` (archives, README.md, description.html, MD5SUMS) | seconds |
-| `14_check_openet_disclosure.py` | outputs of 10 and 12, `data/raw/openet_api/` (raw and `derived/`), benchmark, `config/` | `data/raw/openet_api/derived/disclosure_check.json` (not deposited) | about 10 min |
+| `14_check_openet_disclosure.py` | outputs of 04, 10, 11 and 12 (and of 02 `--verify-eto-ee` when present), `data/raw/openet_api/` (raw and `derived/`), benchmark, `config/` | `data/raw/openet_api/derived/disclosure_check.json` (not deposited) | about 10 min |
 
 ```bash
 python scripts/01_download_data.py
@@ -249,15 +251,20 @@ python scripts/13_make_zenodo_deposit.py              # package the Zenodo depos
 ## Reproducibility
 
 * Pinned environment: `environment.yml` pins the exact versions of the direct dependencies
-  (conda-forge and PyPI) used for the published numbers.
+  (conda-forge and PyPI) used for the published numbers, except `earthengine-api` for the
+  optional Earth Engine ETo check (`scripts/02 --verify-eto-ee`), whose reductions run on the
+  Earth Engine servers.
 * Fixed seeds: the leakage experiment uses seeds 0, 1 and 2 and records package versions,
   seeds, model settings and input md5 sums in `results/leakage_experiment_versions.json`
-  (without a run time, which it prints instead, so that a rerun reproduces the file byte
-  for byte).
+  (without a run time, which it prints instead, so that a rerun in the pinned environment on
+  the same platform reproduces the file byte for byte; the file records the operating
+  system).
 * Byte-reproducible figures: PDFs are written without a creation date, and the figure
   scripts (`03`, `06`, `08`, `09`) rerun themselves with `PYTHONHASHSEED=0`
   (`etcomment.style.rerun_with_fixed_hash_seed`), because the font subsets matplotlib embeds
   in PDFs otherwise vary with Python's random hash seed. PNGs depend on neither.
+  Byte-identical figures also need the same platform and fonts (they were made on macOS
+  arm64 with its system Helvetica).
 * Verified inputs: `scripts/01` checks the md5 sums published on Zenodo; `scripts/11` pins
   the amerifluxr summary to a commit, checks its md5 and records URL, access time and md5
   of every AmeriFlux file (`data/raw/ameriflux_public/provenance.json`,
@@ -271,13 +278,14 @@ python scripts/13_make_zenodo_deposit.py              # package the Zenodo depos
   call; the cache makes reruns use the same extract. OpenET revises its collections, so a
   new extraction can differ slightly; if the md5 sums of the raw extracts match those
   recorded in `results/openet_api_go26_summary.json` (`provenance`: `md5_openet_monthly.csv`,
-  `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*` and
+  `md5_openet_daily.csv`, `md5_sites.csv`, `md5_sites_200m.geojson`), `results/openet_api_*`
+  (except `openet_api_eto_ee_check.csv`, which queries the live Earth Engine collection) and
   `figures/fig2_*` are reproduced exactly.
 * Deposit: `scripts/13` writes deterministic zips; a rebuild from unchanged files gives the
-  same md5 sums with the same Python and zlib (`environment.yml`; the deposit README records
-  the versions used).
-* Tests: `python -m pytest -q` runs the unit tests on synthetic data (offline, a few
-  seconds). GitHub Actions runs them on every push and pull request to `main` with Python
+  same md5 sums with the same Python and zlib versions (the deposit README records both;
+  `environment.yml` pins Python, not zlib).
+* Tests: `python -m pytest -q` runs the unit tests on synthetic data (offline, under a
+  minute). GitHub Actions runs them on every push and pull request to `main` with Python
   3.11 and 3.12 and the latest dependency versions.
 
 ## Key results
@@ -288,7 +296,8 @@ they come from (ET in mm/day).
 **Missing observations counted as zero reproduce GO26's Table 1 (Section 2, Figure 1;
 `scripts/10`, `go26_observed_et_reconstruction.csv`).**
 
-* Summing the available half-hourly ET from the AmeriFlux BASE files, with missing
+* Summing the available half-hourly ET (hourly at the three Mead towers, US-Ne1-Ne3) from
+  the AmeriFlux BASE files, with missing
   observations and entirely missing days treated as zero (pandas' `resample("D").sum()`
   default, over the calendar days of each study period, no closure), reproduces the mean
   observed ET in GO26's Table 1 within 0.04 mm/day at 20 of 22 sites (Figure 1a; mean
@@ -300,26 +309,29 @@ they come from (ET in mm/day).
   from Table 1 +0.62, +0.50 and +1.07 mm/day): (b) daily means of the valid half-hours on
   days with at least 50% of them; (c) the same, with the missing half-hours gap-filled from
   the mean diurnal cycle of a 15-day moving window; (d) as (c), on the days with all energy
-  balance components (92% of the days in (c)), closed with the Bowen-ratio method described
-  by GO26 (Twine et al., 2000) in flux-data-qaqc 0.5.0, without screening the daily
-  correction factors.
+  balance components that flux-data-qaqc's limits keep (92% of the days in (c) at the 21
+  sites with net radiation; US-WT1 has none), closed with the Bowen-ratio method described by
+  GO26 (Twine et al., 2000) in flux-data-qaqc 0.5.0, without screening the daily correction
+  factors.
 * Daily series (`go26_reconstructed_figure_check.csv`): at US-UTJ, 206 of 353 daily
   observations in GO26's Fig. S2 are exactly zero, on dates without available LE
   measurements in the BASE file examined; at US-UiC, the zero-filled daily sums reproduce 360
-  of 361 observations in GO26's Fig. 8 within 0.02 mm/day, including 79 days with incomplete
-  flux records.
+  of 361 observations in GO26's Fig. 8 within 0.02 mm/day, including 79 days with LE in
+  fewer than half of the records, which GO26's own 50% rule would have dropped.
 
 **Implications for OpenET biases and ML correction (Section 3).**
 
 * On the 742 site-months at 21 sites with at least 20 days that pass GO26's 50% filter and
-  have all energy balance terms (`go26_reconstructed_openet_bias.csv`, month set
-  `common_valid_months`), the monthly bias of the current OpenET ensemble (collection 2.1) is
-  +0.51 mm/day against zero-filled ET and +0.17 against the daily means of the valid
-  observations, and -0.43 with the Bowen-ratio closure described by GO26, applied without
-  screening the daily correction factors. With the missing half-hours gap-filled from the
-  mean diurnal cycle (a step GO26 do not describe), it is +0.30 before and -0.24 after the
-  same Bowen-ratio closure, and -0.22 with flux-data-qaqc's energy-balance-ratio (EBR)
-  closure.
+  on which every closure variant has a value (all energy balance terms present, the day kept
+  by flux-data-qaqc's Bowen-ratio limits and an EBR factor available;
+  `go26_reconstructed_openet_bias.csv`, month set `common_valid_months`; the zero-filled sums
+  cover all days of these months, the other variants the same days), the monthly bias of the
+  current OpenET ensemble (collection 2.1) is +0.51 mm/day against zero-filled ET and +0.17
+  against the daily means of the valid observations, and -0.43 with the Bowen-ratio closure
+  described by GO26, applied without screening the daily correction factors. With the
+  missing half-hours gap-filled from the mean diurnal cycle (a step GO26 do not describe), it
+  is +0.30 before and -0.24 after the same Bowen-ratio closure, and -0.22 with
+  flux-data-qaqc's energy-balance-ratio (EBR) closure.
 * Against measured monthly ET at 36 cropland stations of the Volk et al. (2023a) benchmark
   (2016-2022; closure-corrected eddy covariance at 32 stations and weighing lysimeters at
   four; 550 months with at most five gap-filled days), the ensemble bias is -0.22 mm/day
@@ -333,7 +345,8 @@ they come from (ET in mm/day).
 
 * Energy balance correction: GO26's site means are reproduced only with uncorrected
   turbulent fluxes and missing data counted as zero. With the Bowen-ratio closure as GO26
-  describe it, site means are 0.29-2.12 mm/day above Table 1 (mean +1.24; `mean_et_br_fdq`),
+  describe it, site means at the 21 sites with net radiation are 0.29-2.12 mm/day above
+  Table 1 (mean +1.24; `mean_et_br_fdq`),
   and 0.28-1.74 mm/day (mean +1.07; `mean_et_br_fdq_mdv`, Figure 1d) with the gap-filled
   means.
 * Machine learning validation (`scripts/07`, `leakage_experiment_summary.csv`; three seeds,
@@ -372,8 +385,10 @@ they come from (ET in mm/day).
   2024). flux-data-qaqc's `br` correction leaves out 97 of the 23,357 energy-balance days
   (closed LE <= -100 or >= 850 W/m2). Its `ebr` correction gives no factor where its factors
   fall outside 0.5-2 around a day and no other year or day of year fills it: at US-UTV from
-  November 2023 to January 2024, when NETRAD - G is near zero or negative, so its EBR-closed
-  site mean covers mostly the growing season.
+  mid-November 2023 to January 2024, when NETRAD - G is near zero or negative, and from
+  mid-November to December 2024, when no day has enough records with all energy-balance terms
+  (123 of its 459 valid days in all), so its EBR-closed site mean covers mostly the growing
+  season.
   US-WT1 has no NETRAD or G; G is 0 at US-IAB, US-MN1 and US-MN2 (passed to flux-data-qaqc as
   NETRAD + 1 and G = 1 W/m2, the same NETRAD - G, because it drops an all-zero column). The
   Utah towers have two net radiometers that disagree: with the other one, the EBR-closed
@@ -464,6 +479,8 @@ fall to 0.34 and 0.71 mm/day, and the clean gains are 26%, 24%, 20% and 10%.
   `results/`, `figures/`: in the Zenodo deposit, together with a snapshot of the code;
   `figures/site_plots/html/` and `static/` are deposited as `benchmark_site_plots/`
   (`figures/site_plots/png_bokeh/` and `figures/.gitkeep` are not deposited).
+* `benchmark_site_plots/`: when copied from the deposit; `scripts/13` reads the site plots
+  from it when `figures/site_plots/` is absent or empty.
 * `paper/`, `docs/internal/`: manuscript drafts and working notes, kept locally.
 * `.env`: credentials.
 
@@ -471,15 +488,17 @@ fall to 0.34 and 0.71 mm/day, and the clean gains are 26%, 24%, 20% and 10%.
 
 * Code: MIT license (`LICENSE`).
 * Derived data and figures in `results/` and `figures/`, and the tables in `config/`
-  (transcribed from GO26 and Volk et al., 2024, both CC BY 4.0): CC BY 4.0
-  (`LICENSE-data.md`), except the values derived from the OpenET API.
+  (transcribed from GO26 and, for the station list, from `Station_metadata.xlsx` of Volk et
+  al., 2023d, both CC BY 4.0, plus our site notes): CC BY 4.0 (`LICENSE-data.md`), except
+  the values derived from the OpenET API.
 * `benchmark_site_plots/` (deposit): CC BY 4.0; `html/` are the benchmark's Bokeh pages
   (Volk et al., 2023c), unchanged; `static/` is this work.
 * OpenET API data (collection 2.1, extracted 15 October 2026, 03:38-04:09 UTC): subject to
   the OpenET Terms of Service (https://etdata.org/terms-of-service/); attribute "OpenET,
   https://openetdata.org" wherever values are shown. The raw extracts and the tables with
   OpenET values (`data/raw/openet_api/derived/`) are not redistributed; the derived
-  statistics (`results/openet_api_*`, `results/go26_reconstructed_openet_bias.csv`) and the
+  statistics (`results/openet_api_*`, except `results/openet_api_uic_winter.csv`, which holds
+  no OpenET values; `results/go26_reconstructed_openet_bias.csv`) and the
   figure panels that show them (panels b-d of `figures/fig2_*`) are not covered by CC BY 4.0
   (`LICENSE-data.md`).
 * `data/external/golkar_deoliveira_2026/`: figures from GO26, CC BY 4.0, reproduced
@@ -487,22 +506,30 @@ fall to 0.34 and 0.71 mm/day, and the clean gains are 26%, 24%, 20% and 10%.
 * Benchmark flux data: Volk et al. (2023c), doi:10.5281/zenodo.7636781, CC BY 4.0.
 * OpenET model data: Volk et al. (2023d), doi:10.5281/zenodo.10119477, CC BY 4.0.
 * AmeriFlux public metadata (`data/raw/ameriflux_public/`, fetched 15 October 2026,
-  04:26-04:29 UTC): AmeriFlux content; the metadata (amerifluxr's variable-availability
-  summary, AmeriFlux web services, site pages) are CC BY 4.0 under the AmeriFlux data
-  policy, and the site pages are included, with the e-mail addresses removed, for
-  provenance. `results/ameriflux_*`: CC BY 4.0 (attribute AmeriFlux and the site teams).
+  04:26-04:29 UTC): the metadata (amerifluxr's variable-availability summary, AmeriFlux
+  web-service responses) are CC BY 4.0 under the AmeriFlux data policy. The site pages
+  (`siteinfo_*.html`) are AmeriFlux website content (© LBNL / UC Regents; the photos on them
+  carry their own terms), cached unchanged except for the removed e-mail addresses, for
+  provenance only; they are not covered by this repository's licences. `results/ameriflux_*`:
+  CC BY 4.0 (attribute AmeriFlux and the site teams).
 * AmeriFlux BASE data (downloaded 15 October 2026, 08:02:54-08:03:22 UTC): CC BY 4.0 under
   the AmeriFlux CC-BY-4.0 data policy; not redistributed. The derivatives
   `results/go26_observed_et_reconstruction.csv`, `go26_reconstructed_daily.csv`,
   `go26_reconstructed_winter.csv`, `go26_base_version_check.csv` and
-  `go26_reconstructed_figure_check.csv` (with GO26's digitized values, CC BY 4.0) are CC BY
-  4.0: cite each site's BASE DOI (`config/go26_sites.csv`; also in the `base_doi` column and
-  the header of the daily file). `results/go26_reconstructed_openet_bias.csv` holds
-  OpenET-derived statistics (OpenET Terms of Service, above).
+  `go26_reconstructed_figure_check.csv` (with GO26's digitized values, CC BY 4.0), the
+  observed ET of `results/go26_reconstructed_openet_bias.csv` (its OpenET values are
+  OpenET-derived, above), the observed ET behind panel d of `figures/fig2_*` and Figure 1 of
+  the comment (`figures/fig_table1_reconstruction.*`) are CC BY 4.0: cite each site's BASE
+  DOI (`config/go26_sites.csv`; also in the `base_doi` column and the header of the daily
+  file).
 * The AmeriFlux sites and the funding of AmeriFlux data resources are acknowledged below
   (Acknowledgements), as the AmeriFlux CC-BY-4.0 data policy asks.
-* Koppen-Geiger grid: Rubel et al. (2017), via the `kgcpy` package.
-* State boundaries: U.S. Census Bureau county layer, via `basemap-data`.
+* Koppen-Geiger grid (`figures/fig3_*`, `results/site_koppen_check.csv`): Rubel et al.
+  (2017), via the `kgcpy` package (BSD).
+* State boundaries (`figures/fig3_*`): U.S. Census Bureau county layer, dissolved to states,
+  shipped with `basemap-data` (MIT).
+* Lakes on the site map (`figures/fig3_*`): GSHHG version 2.3.6 (Wessel and Smith, 1996),
+  shipped with `basemap-data` (LGPL-3.0-or-later).
 
 ## Acknowledgements
 
@@ -524,7 +551,7 @@ reproducibility.
 
 ## Citation
 
-Cite the archive as given in `CITATION.cff` (on GitHub, "Cite this repository"):
+Cite the archive as follows (repository metadata in `CITATION.cff`):
 
 > Kim, Y., Majumdar, S., Volk, J.M., ReVelle, P., Caldwell, T.G., & Huntington, J.L. (2026). Code
 > and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations
@@ -532,8 +559,8 @@ Cite the archive as given in `CITATION.cff` (on GitHub, "Cite this repository"):
 > https://doi.org/10.5281/zenodo.23383493
 
 Please also cite the comment once published, GO26, the works below
-and the AmeriFlux site DOIs of any BASE data you use (for `results/go26_*`, the 22 BASE DOIs
-in `config/go26_sites.csv`).
+and the AmeriFlux site DOIs of any BASE data you use (for `results/go26_*` and Figure 1 of
+the comment, the 22 BASE DOIs in `config/go26_sites.csv`).
 
 * Melton, F.S., et al., 2022. OpenET: filling a critical data gap in water management for
   the western United States. J. Am. Water Resour. Assoc. 58, 971-994.
@@ -541,6 +568,9 @@ in `config/go26_sites.csv`).
 * Rubel, F., Brugger, K., Haslinger, K., Auer, I., 2017. The climate of the European Alps:
   shift of very high resolution Köppen-Geiger climate zones 1800-2100. Meteorol. Z. 26,
   115-125. https://doi.org/10.1127/metz/2016/0816
+* Twine, T.E., et al., 2000. Correcting eddy-covariance flux underestimates over a
+  grassland. Agric. For. Meteorol. 103, 279-300.
+  https://doi.org/10.1016/S0168-1923(00)00123-4
 * Volk, J.M., et al., 2021. flux-data-qaqc: a Python package for energy balance closure and
   post-processing of eddy flux data. J. Open Source Softw. 6, 3418.
   https://doi.org/10.21105/joss.03418 (version 0.5.0 is used)
@@ -562,3 +592,5 @@ in `config/go26_sites.csv`).
 * Volk, J.M., et al., 2026. Assessing and correcting bias in gridded reference
   evapotranspiration over agricultural lands across the contiguous United States.
   Agric. Water Manag. 333, 110647. https://doi.org/10.1016/j.agwat.2026.110647
+* Wessel, P., Smith, W.H.F., 1996. A global, self-consistent, hierarchical, high-resolution
+  shoreline database. J. Geophys. Res. 101, 8741-8743. https://doi.org/10.1029/96JB00104
