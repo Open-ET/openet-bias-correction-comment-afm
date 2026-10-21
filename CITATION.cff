@@ -37,6 +37,26 @@ keywords:
 references:
   - type: article
     authors:
+      - family-names: Kim
+        given-names: Yeonuk
+      - family-names: Majumdar
+        given-names: Sayantan
+      - family-names: Volk
+        given-names: John M.
+      - family-names: ReVelle
+        given-names: Peter
+      - family-names: Caldwell
+        given-names: Todd G.
+      - family-names: Huntington
+        given-names: Justin L.
+    title: "Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET biases"
+    journal: EarthArXiv
+    status: preprint
+    year: 2026
+    doi: 10.31223/X5B51M
+    notes: "Preprint of the comment, submitted to Agricultural and Forest Meteorology."
+  - type: article
+    authors:
       - family-names: Golkar
         given-names: Mohammad Kian
       - family-names: de Oliveira

@@ -1,6 +1,7 @@
 # Comment on Golkar & de Oliveira (2026): code and data
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23383493.svg)](https://doi.org/10.5281/zenodo.23383493)
+[![EarthArXiv preprint](https://img.shields.io/badge/EarthArXiv-10.31223%2FX5B51M-green.svg)](https://doi.org/10.31223/X5B51M)
 [![Tests](https://github.com/Open-ET/openet-bias-correction-comment-afm/actions/workflows/tests.yml/badge.svg)](https://github.com/Open-ET/openet-bias-correction-comment-afm/actions/workflows/tests.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Data: CC BY 4.0](https://img.shields.io/badge/Data-CC%20BY%204.0-lightgrey.svg)](LICENSE-data.md)
@@ -13,7 +14,8 @@ Code for the comment
 
 > Kim, Y., Majumdar, S., Volk, J.M., ReVelle, P., Caldwell, T.G., Huntington, J.L.
 > *Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine
-> reported OpenET biases.* Submitted to *Agricultural and Forest Meteorology*.
+> reported OpenET biases.* Submitted to *Agricultural and Forest Meteorology*. Preprint:
+> EarthArXiv, https://doi.org/10.31223/X5B51M
 
 on
 
@@ -48,8 +50,9 @@ which are not tracked in git:
 `scripts/13_make_zenodo_deposit.py` builds the deposit in `zenodo/` (gitignored): one zip per
 folder in the table above, with paths relative to the repository root, a zip of the code, a
 README (the deposit description), `description.html` (the same as HTML for the Description
-field of the Zenodo record) and MD5SUMS. It checks the inputs of every archive first and
-stops, writing nothing, if one is missing or incomplete; it then builds the deposit in a
+field of the Zenodo record) and MD5SUMS (of the data archives; the code zip is not listed).
+It checks the inputs of every archive first and stops, writing nothing, if one is missing or
+incomplete; it then builds the deposit in a
 temporary folder next to `zenodo/` and moves it into place, so a failed build leaves the
 previous deposit as it was. The zips are deterministic (sorted entries, fixed timestamps,
 permissions and creator fields), so a rebuild from unchanged files with the same Python and
@@ -558,7 +561,13 @@ Cite the archive as follows (repository metadata in `CITATION.cff`):
 > undermine reported OpenET biases (Version 1.0.0) [dataset]. Zenodo.
 > https://doi.org/10.5281/zenodo.23383493
 
-Please also cite the comment once published, GO26, the works below
+and the comment (the EarthArXiv preprint; its journal version once published) as
+
+> Kim, Y., Majumdar, S., Volk, J.M., ReVelle, P., Caldwell, T.G., & Huntington, J.L. (2026). Comment
+> on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET
+> biases [preprint]. EarthArXiv. https://doi.org/10.31223/X5B51M
+
+Please also cite GO26, the works below
 and the AmeriFlux site DOIs of any BASE data you use (for `results/go26_*` and Figure 1 of
 the comment, the 22 BASE DOIs in `config/go26_sites.csv`).
 

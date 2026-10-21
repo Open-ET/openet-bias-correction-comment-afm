@@ -3,8 +3,9 @@
 The deposit holds a snapshot of the code and the inputs and outputs that git
 does not track, one zip per folder with paths relative to the repository root
 (unzip them there), plus README.md (the deposit description, with sizes and
-md5 sums), description.html (README.md as HTML for the Description field of
-the Zenodo record) and MD5SUMS:
+the md5 sums of the data archives), description.html (README.md as HTML for
+the Description field of the Zenodo record) and MD5SUMS (the data archives;
+the code snapshot is not listed):
 
   openet-bias-correction-comment-afm-<version>.zip   the files git tracks: code, tests, docs, metadata
   config.zip                                         GO26 Tables 1 and 3, site notes, V24 stations
@@ -68,9 +69,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 NAME = "openet-bias-correction-comment-afm"
 DOI = "10.5281/zenodo.23383493"
+PREPRINT_DOI = "10.31223/X5B51M"  # the comment on EarthArXiv (posted 21 October 2026)
 REPO_URL = f"https://github.com/Open-ET/{NAME}"
-TITLE = ("Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations "
-         "undermine reported OpenET biases")
+COMMENT = ("Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported "
+           "OpenET biases")
+TITLE = f"Code and data for: {COMMENT}"
 STAMP = (2026, 10, 15, 0, 0, 0)  # release date, used as every entry's timestamp
 SKIP = {".DS_Store", "__pycache__", ".ipynb_checkpoints", ".pytest_cache"}
 AFFILIATION = "Desert Research Institute, Reno, Nevada, USA"
@@ -536,23 +539,34 @@ def author_line(path: Path | None = None) -> str:
     return ", ".join(names)
 
 
-def deposit_citation(version: str, path: Path | None = None) -> str:
-    """This deposit as a reference: 'Family, I.I., ..., & Family, I. (year). Title (Version v) [dataset]. Zenodo. DOI',
-    with the authors of CITATION.cff (AUTHORS without it)."""
+def cited_authors(path: Path | None = None) -> str:
+    """'Family, I.I., ..., & Family, I.' from CITATION.cff (AUTHORS without it)."""
     path = path or ROOT / "CITATION.cff"
     names = [f"{a['family-names']}, " + "".join(f"{w[0]}." for w in re.split(r"[\s.]+", a.get("given-names", "")) if w)
              for a in (citation_authors(path) if path.is_file() else []) if a.get("family-names")]
-    who = (", ".join(names[:-1]) + ", & " + names[-1] if len(names) > 1 else names[0]) if names else AUTHORS
-    return f"{who} ({STAMP[0]}). {TITLE} (Version {version}) [dataset]. Zenodo. https://doi.org/{DOI}"
+    return (", ".join(names[:-1]) + ", & " + names[-1] if len(names) > 1 else names[0]) if names else AUTHORS
+
+
+def deposit_citation(version: str, path: Path | None = None) -> str:
+    """This deposit as a reference: 'Family, I.I., ..., & Family, I. (year). Title (Version v) [dataset]. Zenodo. DOI',
+    with the authors of CITATION.cff (AUTHORS without it)."""
+    return f"{cited_authors(path)} ({STAMP[0]}). {TITLE} (Version {version}) [dataset]. Zenodo. https://doi.org/{DOI}"
+
+
+def preprint_citation(path: Path | None = None) -> str:
+    """The comment's EarthArXiv preprint as a reference, with the authors of the deposit (the same six)."""
+    return f"{cited_authors(path)} (2026). {COMMENT} [preprint]. EarthArXiv. https://doi.org/{PREPRINT_DOI}"
 
 
 def readme(version: str, rows: list[tuple[str, str, int, str, str]]) -> str:
-    table = "\n".join(f"| `{n}` | {c} | {human(size)} | {lic} | `{h}` |" for n, c, size, lic, h in rows)
-    code = rows[0][0]
+    code = rows[0][0]  # the code snapshot: no md5 here or in MD5SUMS
+    table = "\n".join(f"| `{n}` | {c} | {human(size)} | {lic} | " + ("–" if n == code else f"`{h}`") + " |"
+                      for n, c, size, lic, h in rows)
     built = f"Python {platform.python_version()}, zlib {zlib.ZLIB_RUNTIME_VERSION}"
     return f"""# {TITLE}
 
-Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: {REPO_URL}
+Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Preprint of the comment (EarthArXiv):
+[{PREPRINT_DOI}](https://doi.org/{PREPRINT_DOI}) · Code: {REPO_URL}
 
 {author_line()}
 ({AFFILIATION})
@@ -560,8 +574,9 @@ Version {version} · DOI [{DOI}](https://doi.org/{DOI}) · Code: {REPO_URL}
 ## Description
 
 Reproducible analysis for the comment *Comment on Golkar and de Oliveira (2026): Missing eddy
-covariance observations undermine reported OpenET biases* (Kim et al., submitted to
-*Agricultural and Forest Meteorology*) on Golkar, M.K., de Oliveira, L.A., 2026, Diagnosing and
+covariance observations undermine reported OpenET biases* (Kim et al., 2026, EarthArXiv preprint,
+https://doi.org/{PREPRINT_DOI}; submitted to *Agricultural and Forest Meteorology*) on Golkar,
+M.K., de Oliveira, L.A., 2026, Diagnosing and
 correcting OpenET satellite evapotranspiration across US climate zones: Error decomposition,
 explainable AI, and uncertainty quantification, *Agric. For. Meteorol.* 391, 111524,
 https://doi.org/10.1016/j.agrformet.2026.111524 (GO26, CC BY 4.0).
@@ -594,9 +609,10 @@ Data dates (UTC, from the provenance files):
 Every archive except `{code}` holds paths relative to the repository root.
 `results.zip` includes `results/README.txt`, a one-line guide to every file.
 
-Verify the downloads with `md5sum -c MD5SUMS` (Linux) or `md5 -r *.zip` (macOS; compare with
-`MD5SUMS`). The zips are deterministic: `scripts/13_make_zenodo_deposit.py` rebuilds them with
-the same md5 sums from unchanged files with the same Python and zlib versions (built with
+`MD5SUMS` lists the data archives (all but `{code}`). Verify them with `md5sum -c MD5SUMS`
+(Linux) or `md5 -r *.zip` (macOS; compare with `MD5SUMS`). They are deterministic:
+`scripts/13_make_zenodo_deposit.py` rebuilds them with the same md5 sums from unchanged files
+with the same Python and zlib versions (built with
 {built}; `environment.yml` pins Python, not zlib), since zlib's compressed output can differ
 between versions. Without the OpenET
 extracts, pass `--no-disclosure-check`: before building, the script requires the record of the
@@ -690,8 +706,12 @@ Please cite this deposit as
 
 {deposit_citation(version)}
 
+and the comment (the EarthArXiv preprint; its journal version once published) as
+
+{preprint_citation()}
+
 The code is also on GitHub, {REPO_URL}, of which the code archive is a snapshot (`CITATION.cff`
-there and in the archive). Please also cite the comment once published, GO26,
+there and in the archive). Please also cite GO26,
 Volk et al. (2023a, 2023b, 2023c, 2023d, 2024), Volk et al. (2026) for the bias-corrected gridMET
 reference ET, flux-data-qaqc (Volk et al., 2021; version 0.5.0) for the energy balance closure,
 Twine et al. (2000) for the Bowen-ratio closure as GO26 describe it, OpenET (Melton et al.,
@@ -701,6 +721,7 @@ Twine et al. (2000) for the Bowen-ratio closure as GO26 describe it, OpenET (Mel
 
 ## Related identifiers
 
+- Supplement to (the comment, EarthArXiv preprint): https://doi.org/{PREPRINT_DOI}
 - Comment on: https://doi.org/10.1016/j.agrformet.2026.111524
 - Source code: {REPO_URL}
 - Data used: https://doi.org/10.5281/zenodo.7636781, https://doi.org/10.5281/zenodo.10119477
@@ -828,7 +849,7 @@ def build(out: Path, version: str, disclosure: bool = True) -> list[tuple[str, s
         text = readme(version, rows)
         (tmp / "README.md").write_text(text, encoding="utf-8")
         (tmp / "description.html").write_text(description_html(text), encoding="utf-8")
-        (tmp / "MD5SUMS").write_text("".join(f"{h}  {n}\n" for n, _, _, _, h in rows))
+        (tmp / "MD5SUMS").write_text("".join(f"{h}  {n}\n" for n, _, _, _, h in rows[1:]))  # not the code snapshot
         install(tmp, out)
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

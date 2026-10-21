@@ -151,9 +151,10 @@ def test_build_assembles_every_archive(s13, tmp_path):
         assert z.namelist() == [f"{s13.NAME}-9.9.9/{f}" for f in
                                 ("CITATION.cff", "README.md", "scripts/01_download_data.py", "src/etcomment/__init__.py")]
     sums = dict(line.split("  ")[::-1] for line in (out / "MD5SUMS").read_text().splitlines())
-    assert sums == {n: hashlib.md5((out / n).read_bytes()).hexdigest() for n in names}
+    assert sums == {n: hashlib.md5((out / n).read_bytes()).hexdigest() for n in names[1:]}  # not the code snapshot
     readme = (out / "README.md").read_text()
     assert all(f"`{h}`" in readme for h in sums.values())
+    assert hashlib.md5((out / names[0]).read_bytes()).hexdigest() not in readme
     assert "Jane A. Doe ([0000-0001-2345-6789](https://orcid.org/0000-0001-2345-6789)), Richard Roe\n" in readme
     assert "as the AmeriFlux CC-BY-4.0 data policy asks" in readme
     ack = " ".join(readme.split("## Acknowledgements\n\n", 1)[1].split("\n\n", 1)[0].split())
@@ -161,6 +162,8 @@ def test_build_assembles_every_archive(s13, tmp_path):
     assert "data records: US-ARM," in ack and ack.endswith("U.S. Department of Energy's Office of Science.")
     cite = f"Doe, J.A., & Roe, R. (2026). {s13.TITLE} (Version 9.9.9) [dataset]. Zenodo. https://doi.org/{s13.DOI}"
     assert s13.deposit_citation("9.9.9") == cite and f"\n{cite}\n" in readme and s13.REPO_URL in readme
+    pre = f"Doe, J.A., & Roe, R. (2026). {s13.COMMENT} [preprint]. EarthArXiv. https://doi.org/{s13.PREPRINT_DOI}"
+    assert s13.preprint_citation() == pre and f"\n{pre}\n" in readme
     # description.html: the README as HTML for the Zenodo record, with only the tags Zenodo keeps
     desc = (out / "description.html").read_text()
     assert desc == s13.description_html(readme) and "<h2>Contents</h2>" in desc
