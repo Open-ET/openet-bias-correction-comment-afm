@@ -180,7 +180,8 @@ FILE_NOTES = {
         "the openet column is GO26's plotted OpenET line (OpenET, https://openetdata.org)",
     "digitized_summary.json":
         "scripts/04: per digitized site: calibration, zero days and runs, means, OpenET and XGBoost RMSE, MBE and "
-        "R2 with and without the exact-zero days, and the statistics printed on GO26's figure",
+        "R2 with and without the exact-zero days, the statistics printed on GO26's figure, and the sensitivity of "
+        "the RMSE improvement to dots hidden under the plotted lines and to a doubled zero tolerance",
     "go26_base_version_check.csv":
         "scripts/10: per GO26 tower and year of the study period: share of records with LE in the cited BASE file "
         "and in AmeriFlux's variable-availability summary of October 2025, and in-period LE records of each; per "
@@ -627,7 +628,11 @@ Version 1.1.0 (28 October 2026) adds Figure 2 of the comment; nothing published 
   statistics by `scripts/14`).
 - Daily OpenET ensemble ET extracted at the 13 further GO26 towers (28 October 2026; not
   deposited) to check the monthly averaging of Figure 2; `scripts/02` now makes 37 requests.
-- Code: `scripts/02`, `08`, `10`, `13` and `14` and their tests; `python-docx` added to
+- Digitization sensitivity (`scripts/04`; new key `sensitivity` in
+  `results/digitized_summary.json`, its other values unchanged): at US-UTJ the RMSE improvement
+  without the exact zeros is -1.2% to +4.0% (0.5% as digitized) with the dots hidden under the
+  plotted lines added and the zero tolerance doubled.
+- Code: `scripts/02`, `04`, `08`, `10`, `13` and `14` and their tests; `python-docx` added to
   `environment.yml` (`docs` extra; no result depends on it).
 - Unchanged: every other file in `results/` and `figures/`, and `config.zip`,
   `data_external_golkar_deoliveira_2026.zip` and `data_raw_ameriflux_public.zip` (identical md5

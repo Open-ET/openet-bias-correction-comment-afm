@@ -6,7 +6,10 @@ Inputs (CC BY 4.0; sources in data/README.md and README.md, Data streams):
 
 Outputs:
   results/digitized_<site>.csv           daily observed / OpenET / XGBoost values
-  results/digitized_summary.json         statistics with and without exact-zero days
+  results/digitized_summary.json         statistics with and without exact-zero days, and
+                                         ("sensitivity") the RMSE improvement with the dots
+                                         hidden under the lines added and the zero
+                                         tolerance doubled
   figures/qc/digitized_<site>_overlay.png digitized points drawn over the source
 
 Usage:
@@ -33,6 +36,10 @@ ZERO_TOL = 0.015  # mm/day (about 5 px in Fig. S2). Dots in the zero runs sit
                   # within +-0.012 mm/day of the zero line (+-3.4 px of
                   # digitizing noise); the closest genuine values are -0.029
                   # and +0.031 mm/day. Using 0.03 instead adds one zero day.
+# Sensitivity of the RMSE improvement (summary key "sensitivity"; not in the digitized series): dots the two passes
+# miss because a plotted line crosses them, read where at least this share of the dot's disk shows (at US-UTJ six of
+# the 13 days of 2024 without a reading; each checked by eye: a dot crossed by a near-vertical XGBoost line)
+HIDDEN_MIN_COVER = 0.3
 
 
 def figS2_config(path: str) -> dict:
@@ -183,7 +190,36 @@ def run(cfg: dict) -> tuple[pd.DataFrame, dict]:
     res["improvement_pct_nonzero"] = 100 * (1 - res["xgb_nonzero"]["rmse"] / res["openet_nonzero"]["rmse"])
     res["attribution_all"] = mt.improvement_attribution(both["openet"], both["xgb"], both["obs"])
     res["attribution_nonzero"] = mt.improvement_attribution(nz["openet"], nz["xgb"], nz["obs"])
+    hidden = dg.disk_peaks(rgb, cal, cfg["obs_mask"], cfg["dot_d"], row_limits=cfg["row_limits"],
+                           min_cover=HIDDEN_MIN_COVER)
+    res["sensitivity"] = sensitivity(df, *dg.fill_from_peaks(df["obs"], hidden, max_offset=0.3))
     return df, res
+
+
+def improvement(df: pd.DataFrame, obs: pd.Series, zero_tol: float) -> dict:
+    """RMSE improvement of XGBoost over OpenET (%) against ``obs``: on every day with an observation and both lines,
+    and without the days within ``zero_tol`` of zero (the exact zeros)."""
+    both = df.assign(obs=obs).dropna(subset=["obs", "openet", "xgb"])
+    nz = both[both["obs"].abs() >= zero_tol]
+
+    def pct(s: pd.DataFrame) -> float:
+        return 100 * (1 - mt.summary(s["xgb"], s["obs"])["rmse"] / mt.summary(s["openet"], s["obs"])["rmse"])
+
+    return {"n_days": int(len(both)), "n_nonzero_days": int(len(nz)), "improvement_pct_all": pct(both),
+            "improvement_pct_nonzero": pct(nz)}
+
+
+def sensitivity(df: pd.DataFrame, with_hidden: pd.Series, hidden_added: list) -> dict:
+    """The RMSE improvement with and without the exact zeros for the digitized observations and for those plus the
+    dots hidden under the lines (``with_hidden``, ``hidden_added``: :func:`etcomment.digitize.fill_from_peaks` at
+    HIDDEN_MIN_COVER), each with the zero tolerance ZERO_TOL and doubled; ``range_pct_nonzero``: the smallest and
+    largest improvement without the exact zeros over the four cases."""
+    cases = {f"{name}{suffix}": improvement(df, obs, tol)
+             for name, obs in (("digitized", df["obs"]), ("hidden_added", with_hidden))
+             for suffix, tol in (("", ZERO_TOL), ("_zero_tol_doubled", 2 * ZERO_TOL))}
+    pcts = [c["improvement_pct_nonzero"] for c in cases.values()]
+    return {"zero_tol": ZERO_TOL, "hidden_min_cover": HIDDEN_MIN_COVER, "hidden_added_days": hidden_added,
+            "cases": cases, "range_pct_nonzero": [min(pcts), max(pcts)]}
 
 
 def zero_runs(df: pd.DataFrame) -> list[dict]:

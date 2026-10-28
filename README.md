@@ -382,6 +382,11 @@ they come from (ET in mm/day).
   `digitized_summary.json`) reproduce the reported XGBoost reduction in RMSE (52.7%; GO26:
   52.8%; OpenET RMSE 1.88 vs 1.877 printed, XGBoost 0.89 vs 0.885). Excluding the
   zero-valued reference observations reduces it to 0.5% (OpenET RMSE 1.04, XGBoost 1.03).
+  Allowing for digitization errors (`digitized_summary.json`, `sensitivity`), it ranges from
+  -1.2% to +4.0%: -1.2% with the zero threshold doubled (0.03 mm/day), +4.0% with the six
+  observations partly hidden under the plotted lines added (13 days of 2024 have no reading;
+  on six of them at least 30% of the dot shows, each crossed by a near-vertical XGBoost line
+  and checked by eye) and +2.6% with both.
 
 **Additional methodological concerns (Section 4).**
 
@@ -600,8 +605,10 @@ reproducibility.
 * 1.1.0 (28 October 2026, https://doi.org/10.5281/zenodo.23735189): adds Figure 2 of the
   comment (`figures/fig_openet_reconstruction.*`; OpenET against the rebuilt EC site means over
   the same days), its table `results/go26_reconstructed_openet_sites.csv` (`scripts/10`, checked
-  by `scripts/14`) and the daily OpenET check at all 22 GO26 towers (`scripts/02`, 13 more
-  requests); `python-docx` joins `environment.yml`. Every result of 1.0.0 is unchanged.
+  by `scripts/14`), the daily OpenET check at all 22 GO26 towers (`scripts/02`, 13 more
+  requests) and the digitization sensitivity at US-UTJ (`scripts/04`, key `sensitivity` of
+  `results/digitized_summary.json`); `python-docx` joins `environment.yml`. Every result of
+  1.0.0 is unchanged.
 * 1.0.0 (15 October 2026, https://doi.org/10.5281/zenodo.23383493): first release.
 
 ## Citation
