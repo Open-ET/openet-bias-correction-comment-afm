@@ -595,6 +595,15 @@ reviewed and verified by the authors, who retain full responsibility for the fin
 conclusions. The analysis code is publicly available on GitHub to support transparency and
 reproducibility.
 
+## Versions
+
+* 1.1.0 (28 October 2026, https://doi.org/10.5281/zenodo.23735189): adds Figure 2 of the
+  comment (`figures/fig_openet_reconstruction.*`; OpenET against the rebuilt EC site means over
+  the same days), its table `results/go26_reconstructed_openet_sites.csv` (`scripts/10`, checked
+  by `scripts/14`) and the daily OpenET check at all 22 GO26 towers (`scripts/02`, 13 more
+  requests); `python-docx` joins `environment.yml`. Every result of 1.0.0 is unchanged.
+* 1.0.0 (15 October 2026, https://doi.org/10.5281/zenodo.23383493): first release.
+
 ## Citation
 
 Cite the archive as follows (repository metadata in `CITATION.cff`):

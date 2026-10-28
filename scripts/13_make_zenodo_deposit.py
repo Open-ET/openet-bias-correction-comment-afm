@@ -613,6 +613,26 @@ Data dates (UTC, from the provenance files):
   not deposited); the versions equal those GO26 cite at all 22
   sites (`results/go26_observed_et_reconstruction.csv`, `base_version`, `version_matches_go26`).
 
+## Changes in version 1.1.0
+
+Version 1.1.0 (28 October 2026) adds Figure 2 of the comment; nothing published in version 1.0.0
+(15 October 2026, https://doi.org/10.5281/zenodo.23383493) changes.
+
+- New figure: `figures/fig_openet_reconstruction.*` (Figure 2 of the comment), the EC site means
+  of Figure 1 against the current OpenET ensemble averaged over the same days at GO26's towers:
+  every day of the study period for the zero-filled means, and the days on which every
+  processing variant has a value for the valid-day, gap-filled and closure-corrected means.
+- New table: `results/go26_reconstructed_openet_sites.csv` (`scripts/10`), the per-tower OpenET
+  and observed means behind Figure 2 (OpenET-derived; checked jointly with the other OpenET
+  statistics by `scripts/14`).
+- Daily OpenET ensemble ET extracted at the 13 further GO26 towers (28 October 2026; not
+  deposited) to check the monthly averaging of Figure 2; `scripts/02` now makes 37 requests.
+- Code: `scripts/02`, `08`, `10`, `13` and `14` and their tests; `python-docx` added to
+  `environment.yml` (`docs` extra; no result depends on it).
+- Unchanged: every other file in `results/` and `figures/`, and `config.zip`,
+  `data_external_golkar_deoliveira_2026.zip` and `data_raw_ameriflux_public.zip` (identical md5
+  sums); `benchmark_site_plots.zip` differs only in the DOI in its `README.txt`.
+
 ## Contents
 
 | File | Contents | Size | Licence | MD5 |
