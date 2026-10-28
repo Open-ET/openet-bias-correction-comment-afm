@@ -14,6 +14,10 @@ unknowns:
            days in month; the site-months are rebuilt from public data only (go26_reconstructed_daily.csv,
            config/go26_sites.csv and the months without OpenET in openet_api_go26_sites.csv, months_filled) and
            must give the published n_months and observed_mm_d
+  sites10  results/go26_reconstructed_openet_sites.csv, published OpenET means per tower: the study period (as
+           sites below) and the days on which every valid-day variant exists in months with OpenET (monthly OpenET /
+           days in month, weighted by those days); the days are rebuilt from public data as for bias10 and must give
+           the published n_days and observed means
   sites    results/openet_api_go26_sites.csv: study-period means (months without OpenET take the 2016-2025 mean
            of the calendar month, as scripts/12)
   json     results/openet_api_go26_summary.json, cross-tower statistics: the exactly linear ones, and gradients of
@@ -103,6 +107,7 @@ class Inputs:
         self.shared = self.csv(RES / "openet_api_shared_daily.csv")
         self.fig = self.csv(RES / "openet_api_go26_figure_check.csv")
         self.bias = self.csv(RES / "go26_reconstructed_openet_bias.csv", comment="#")
+        self.site_means = self.csv(RES / "go26_reconstructed_openet_sites.csv", comment="#")
         self.recon = self.csv(RES / "go26_reconstructed_daily.csv", comment="#", parse_dates=["date"])
         self.digitized = {s: self.csv(RES / f"digitized_{s}.csv", parse_dates=["date"]).set_index("date")
                           for s in self.fig["site"]}
@@ -189,6 +194,38 @@ def bias_rows(I: Inputs, s10) -> tuple[list[Row], list[Row]]:
                   np.nan if withheld_row else r.openet_mm_d)
         (withheld if withheld_row else published).append(row)
     return published, withheld
+
+
+def site_mean_rows(I: Inputs, s10) -> list[Row]:
+    """Published OpenET means of go26_reconstructed_openet_sites.csv, their days rebuilt from public data (n_days and
+    the observed means must match the table)."""
+    variants = dict(s10.VALID_VARIANTS)
+    d = I.recon.assign(month=I.recon["date"].dt.to_period("M").dt.to_timestamp())
+    nofill = {(s, pd.Timestamp(f"{x}-01")) for s, f in zip(I.sites["site"], I.sites["months_filled"].fillna(""))
+              for x in str(f).split(";") if x}
+    d["common"] = (d[list(variants.values())].notna().all(axis=1)
+                   & np.array([(s, m) not in nofill for s, m in zip(d["site"], d["month"])]))
+    go = I.go.set_index("site")
+    out = []
+    for r in I.site_means.itertuples(index=False):
+        g = d[d["site"].eq(r.site)]
+        s = g if r.day_set == "calendar" else g[g["common"]]
+        name = ("sites10", r.site, r.day_set)
+        obs = {"zero_filled": s["et_hh_sum_zero_filled"].mean(), **{v: s[c].mean() for v, c in variants.items()}}
+        bad = [v for v, x in obs.items() if not abs(x - getattr(r, f"obs_{v}_mm_d")) <= TOL
+               and not (r.day_set == "calendar" and v != "zero_filled")]
+        if len(s) != r.n_days or bad:
+            I.problems.append(f"{name}: rebuilt {len(s)} days, observed {bad} differ; the table has {r.n_days}")
+        if r.day_set == "calendar":
+            w = {k: x / len(s) for k, x in fill_weights(I, "et_ensemble", r.site, go.loc[r.site, "period_start"],
+                                                         go.loc[r.site, "period_end"]).items()}
+        else:
+            w = {}
+            for mo, n in s["month"].value_counts().items():
+                k = I.key("et_ensemble", r.site, mo)
+                w[k] = w.get(k, 0.0) + n / (len(s) * mo.days_in_month)
+        out.append(Row(name, "lin", w, np.nan if r.openet_withheld else r.openet_mm_d))
+    return out
 
 
 # -- (B) sites table of scripts/12 ---------------------------------------------------------------------------------
@@ -463,7 +500,8 @@ def main(argv: list[str] | None = None) -> None:
     s10, s12 = _load("10_reconstruct_go26_observed_et"), _load("12_openet_api_analysis")
     I = Inputs()
     published, withheld = bias_rows(I, s10)
-    rows = published + sites_rows(I) + json_rows(I) + [r for m in MODELS for r in bench_rows(I, m)]
+    rows = (published + [r for r in site_mean_rows(I, s10) if np.isfinite(r.published)] + sites_rows(I)
+            + json_rows(I) + [r for m in MODELS for r in bench_rows(I, m)])
     if "daily" in families:
         rows += figure_rows(I) + shared_rows(I, s12)
     n_bad = validate(I, rows)

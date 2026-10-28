@@ -3,11 +3,11 @@ message: "If you use this code or the derived data, please cite the comment and 
 title: "Code and data for: Comment on Golkar and de Oliveira (2026): Missing eddy covariance observations undermine reported OpenET biases"
 type: software
 license: MIT
-version: 1.0.0
-doi: 10.5281/zenodo.23383493
-date-released: "2026-10-15"
+version: 1.1.0
+doi: 10.5281/zenodo.23735189
+date-released: "2026-10-28"
 repository-code: "https://github.com/Open-ET/openet-bias-correction-comment-afm"
-url: "https://doi.org/10.5281/zenodo.23383493"
+url: "https://doi.org/10.5281/zenodo.23735189"
 authors:
   - family-names: Kim
     given-names: Yeonuk

@@ -220,7 +220,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Project folders kept out of git: inputs and outputs are archived on Zenodo
-# (doi:10.5281/zenodo.23383493); downloads are recreated by the scripts (README)
+# (doi:10.5281/zenodo.23735189); downloads are recreated by the scripts (README)
 paper/
 benchmark_site_plots/
 figures/

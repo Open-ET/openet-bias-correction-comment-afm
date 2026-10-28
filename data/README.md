@@ -29,6 +29,10 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
   - `openet_daily.csv`: site, date, `et_ensemble`, `eto`, `pr`; mm/d, 2016-01-01 to
     2025-07-31, at US-UiC, US-UTJ and the seven towers shared with the benchmark (ETo and
     precipitation at US-UiC and US-UTJ only).
+  - `openet_daily_go26.csv`: site, date, `et_ensemble`; mm/d, 2016-01-01 to 2025-07-31, at
+    all 22 GO26 towers (the nine above and 13 extracted on 28 October 2026, 14:49-15:18
+    UTC), read by `scripts/10` for the daily check of Figure 2 of the comment. Kept apart
+    so that `openet_daily.csv`, which `scripts/12` reads, is unchanged.
   - `manifest.json`: request log (endpoint, parameters including the collection version,
     tag, site or sites, rows, status and UTC time; upload entries name the file; requests
     made after the 15 October 2026 extraction also log the md5 of the boxes' GeoJSON,
@@ -40,7 +44,10 @@ over time); `external/golkar_deoliveira_2026/` is also in the Zenodo deposit
     ensemble, by day set and by month), `benchmark_station_months.csv` (benchmark
     station-months: measured closed ET and OpenET minus measured, ensemble and six models)
     and `uic_winter_openet.csv` (the US-UiC winter comparison with OpenET, ETo and
-    precipitation); and by `scripts/14_check_openet_disclosure.py`: `disclosure_check.json`
+    precipitation); by `scripts/10_reconstruct_go26_observed_et.py`:
+    `go26_openet_sites_daily_check.csv` (the per-tower table of Figure 2 with the daily
+    ensemble over the same days, `openet_daily_mm_d`); and by
+    `scripts/14_check_openet_disclosure.py`: `disclosure_check.json`
     (the record of the joint OpenET disclosure check, which `scripts/13` requires before it
     builds the deposit).
 

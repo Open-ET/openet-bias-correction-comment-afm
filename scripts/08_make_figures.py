@@ -30,6 +30,13 @@ Table 1 figure (fig_table1_*; not yet numbered in the comment): GO26 Table 1 mea
             energy-balance terms, leaving out days whose closed LE is <= -100 or
             >= 850 W m-2 (scripts/10);
             (a)-(c) have no closure.
+OpenET figure (fig_openet_*; Figure 2 of the comment): the same EC site means against the current OpenET
+        ensemble averaged over the same days (scripts/10, go26_reconstructed_openet_sites.csv), in the layout of
+        the Table 1 figure: (a) the zero-filled means against OpenET over every day of the study period; (b)-(d)
+        the valid-day, gap-filled and gap-filled Bowen-ratio closed means against OpenET over the days on which
+        every variant has a value (one day set per tower, so 21 towers: US-WT1 has no net radiation).  Each panel
+        gives the OpenET bias (mean of OpenET minus EC ET over the towers), the RMS difference and Pearson r.
+        The OpenET attribution is in the figure caption of the comment, not on the figure.
 
 Inputs: results/digitized_US-UTJ.csv, results/digitized_summary.json (scripts/04),
 config/go26_sites.csv, results/ameriflux_le_availability.csv (scripts/11),
@@ -98,6 +105,15 @@ TABLE1_SERIES = {  # column of scripts/10 (one panel each): marker face, panel t
 TABLE1_TOL = 0.04  # mm/d; Table 1 is rounded to 0.01 mm/d
 # sites labelled in the zero-filled panel (outside TABLE1_TOL): label position (mm/d) and alignment
 TABLE1_LABELS = {"US-UTV": (1.08, 0.80, "left"), "US-UTD": (0.12, 1.22, "left")}
+# OpenET figure (Figure 2 of the comment): site means of scripts/10 over the same days as OpenET, one panel per
+# (day_set, column) as the Table 1 figure: marker face, panel title
+RECON_OPENET = "go26_reconstructed_openet_sites.csv"
+OPENET_SERIES = {
+    ("calendar", "obs_zero_filled_mm_d"): (st.ORANGE, "Missing values set to zero"),
+    ("common", "obs_unclosed_mm_d"): (st.BLUE, "Missing values set to NA"),
+    ("common", "obs_unclosed_mdv_mm_d"): (st.AQUA, "Missing values gap-filled"),
+    ("common", "obs_br_fdq_mdv_mm_d"): (st.INK, "Gap-filled and closure-corrected"),
+}
 
 
 def zero_spans(df: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp, int]]:
@@ -487,12 +503,69 @@ def fig_table1() -> None:
     _save(fig, "fig_table1_reconstruction")
 
 
+def openet_agreement(m: pd.DataFrame) -> pd.DataFrame:
+    """Per OPENET_SERIES panel, over the towers with both values: towers, OpenET bias (mean of OpenET minus observed
+    ET over the same days), RMS difference and Pearson r (mm/d)."""
+    rows = {}
+    for (day_set, col) in OPENET_SERIES:
+        s = m[m["day_set"] == day_set].dropna(subset=["openet_mm_d", col])
+        d = s["openet_mm_d"] - s[col]
+        rows[(day_set, col)] = {"n_sites": len(s), "bias": d.mean(), "rmsd": float(np.sqrt((d ** 2).mean())),
+                                "r": float(np.corrcoef(s["openet_mm_d"], s[col])[0, 1]) if len(s) > 2 else np.nan}
+    return pd.DataFrame(rows).T
+
+
+def fig_openet() -> None:
+    f = RES / RECON_OPENET
+    if not f.exists():
+        print(f"results/{RECON_OPENET} not found (scripts/10): OpenET figure not drawn")
+        return
+    st.nature(8)
+    m = pd.read_csv(f, comment="#")
+    agree = openet_agreement(m)
+    vals = np.concatenate([m.loc[m["day_set"] == ds, ["openet_mm_d", col]].to_numpy().ravel()
+                           for ds, col in OPENET_SERIES])
+    lim = np.ceil(np.nanmax(vals) * 4 + 0.5) / 4  # shared by all panels
+    ticks = np.arange(0, lim, 0.5)
+    fig = plt.figure(figsize=(W, 6.25))
+    side, gap_x, gap_y, bottom = 2.55, 0.42, 0.36, 0.5  # the Table 1 figure's grid
+    left = (W - (2 * side + gap_x)) / 2 + 0.2
+    up = ScaledTranslation(0, 1.5 / 72, fig.dpi_scale_trans)
+    for i, ((day_set, col), (fc, title)) in enumerate(OPENET_SERIES.items()):
+        row, c = divmod(i, 2)
+        s = m[m["day_set"] == day_set]
+        ax = _axes(fig, left + c * (side + gap_x), bottom + (1 - row) * (side + gap_y), side, side)
+        ax.plot([0, lim], [0, lim], color=st.INK2, lw=0.75, ls="--", zorder=1)
+        # 1:1 label low on the line and the statistics top left: the towers lie at OpenET >= 1.5 mm/d
+        ax.text(1.0, 1.0, "1:1", fontsize=7.5, color=st.INK2, ha="right", va="bottom", rotation=45,
+                transform_rotates_text=True, rotation_mode="anchor", transform=ax.transData + up)
+        ax.scatter(s["openet_mm_d"], s[col], s=24, facecolor=fc, edgecolor="white", lw=0.6, zorder=3)
+        a_ = agree.loc[(day_set, col)]
+        ax.text(0.03, 0.97, f"OpenET bias {_signed(a_.bias)} mm d$^{{-1}}$\nRMSD {a_.rmsd:.2f} mm d$^{{-1}}$\n"
+                f"r = {a_.r:.2f}, {a_.n_sites:.0f} sites",
+                transform=ax.transAxes, ha="left", va="top", fontsize=7.5, color=st.INK, linespacing=1.3)
+        ax.set_xlim(0, lim)
+        ax.set_ylim(0, lim)
+        ax.set_aspect("equal")
+        ax.set_xticks(ticks, [f"{t:g}" for t in ticks] if row else [])
+        ax.set_yticks(ticks, [] if c else [f"{t:g}" for t in ticks])
+        if not c:
+            ax.set_ylabel("Reproduced EC ET (mm d$^{-1}$)")
+        if row:
+            ax.set_xlabel("OpenET ET, same days (mm d$^{-1}$)")
+        for text, dx, kw in (("abcd"[i], 0, dict(fontsize=10, fontweight="bold")), (title, 12, dict(fontsize=8))):
+            ax.annotate(text, xy=(0, 1), xycoords="axes fraction", xytext=(dx, 7), textcoords="offset points",
+                        va="baseline", ha="left", color=st.INK, **kw)
+    _save(fig, "fig_openet_reconstruction")  # OpenET attribution: in the caption of the comment
+
+
 def main() -> None:
     st.rerun_with_fixed_hash_seed(__name__)  # byte-reproducible PDFs (etcomment.style)
     fig1()
     fig2()
     fig_table1()
-    print("wrote figures/fig1_*, figures/fig2_*, figures/fig_table1_*")
+    fig_openet()
+    print("wrote figures/fig1_*, figures/fig2_*, figures/fig_table1_*, figures/fig_openet_*")
 
 
 if __name__ == "__main__":

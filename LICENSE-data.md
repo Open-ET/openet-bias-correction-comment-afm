@@ -24,9 +24,12 @@ Third-party material keeps its own license and attribution:
 * Volk et al. (2023d) OpenET model data, https://doi.org/10.5281/zenodo.10119477,
   CC BY 4.0 (downloaded, not stored).
 * OpenET API data (collection 2.1, extracted on 15 October 2026, 03:38-04:09 UTC, by
-  `scripts/02_download_openet_api.py`). The statistics in `results/openet_api_*`
-  and `results/go26_reconstructed_openet_bias.csv`, and the figure panels that
-  show them (Fig. 2b-d, `figures/fig2_zero_fill_bias_and_site_ET.*`), are derived
+  `scripts/02_download_openet_api.py`; daily ensemble ET at 13 further GO26 towers on 28
+  October 2026). The statistics in `results/openet_api_*`,
+  `results/go26_reconstructed_openet_bias.csv` and
+  `results/go26_reconstructed_openet_sites.csv`, and the figures that show them (Fig. 2b-d,
+  `figures/fig2_zero_fill_bias_and_site_ET.*`; the OpenET values of Figure 2 of the comment,
+  `figures/fig_openet_reconstruction.*`), are derived
   from OpenET data: attribute "OpenET, https://openetdata.org". They are subject to the
   OpenET Terms of Service (https://etdata.org/terms-of-service/) and are not covered by
   the CC BY 4.0 license above. The raw extracts and the tables with OpenET values
@@ -54,8 +57,9 @@ Third-party material keeps its own license and attribution:
   `results/go26_reconstructed_figure_check.csv` (with GO26's digitized Figs. 8 and S2).
   Cite each site's BASE DOI (`config/go26_sites.csv`; also in the `base_doi` column of
   `go26_observed_et_reconstruction.csv` and the header lines of
-  `go26_reconstructed_daily.csv`). `results/go26_reconstructed_openet_bias.csv` holds
-  OpenET-derived statistics (OpenET Terms of Service, above).
+  `go26_reconstructed_daily.csv`). `results/go26_reconstructed_openet_bias.csv` and
+  `results/go26_reconstructed_openet_sites.csv` hold OpenET-derived statistics (OpenET Terms
+  of Service, above) next to the observed ET (CC BY 4.0, as above).
 
 Acknowledgement asked for by the AmeriFlux CC-BY-4.0 data policy, for any use of the
 BASE data or their derivatives above (the wording AmeriFlux recommends):

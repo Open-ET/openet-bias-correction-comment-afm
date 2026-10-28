@@ -640,6 +640,41 @@ def test_openet_bias_shows_the_zero_fill_effect(tmp_path, rec):
     assert np.allclose(dfa["observed_mm_d"], 1.0) and dfa["n_months"].eq(5).all()
 
 
+def test_openet_site_means_average_openet_over_the_observed_days(rec):
+    # US-AAA: 25 valid days a month, 10 in July, closure on 15 in March; no OpenET in May 2021 (filled from May 2020
+    # for the period mean, left out of the common days); OpenET 2 mm/d, 3 mm/d in July
+    a = _daily_table("US-AAA", "2021-01", "2021-12", 2.0, {"default": 25, "2021-07": 10}, {"2021-03": 15}, 1.25)
+    # US-BBB: every day valid except in February and April, so its common days miss part of two months only
+    b = _daily_table("US-BBB", "2021-01", "2021-12", 1.0, {"default": 31, "2021-02": 20, "2021-04": 25})
+    months = pd.date_range("2020-01-01", "2021-12-01", freq="MS")
+    per_day = np.where(months == "2021-07-01", 3.0, np.where(months == "2020-05-01", 4.0, 2.0))
+    openet = pd.concat([pd.DataFrame({"site": s, "date": months, "et_ensemble": per_day * months.days_in_month})
+                        for s in ("US-AAA", "US-BBB")], ignore_index=True)
+    openet.loc[openet["date"].eq("2021-05-01"), "et_ensemble"] = np.nan
+    periods = pd.DataFrame({"site": ["US-AAA", "US-BBB", "US-CCC"], "koppen_go26": ["BSk", "Dfa", "Cfa"],
+                            "period_start": "2021-01", "period_end": "2021-12"})
+    daily_oe = pd.DataFrame({"site": "US-AAA", "date": a["date"], "et_ensemble": 2.5})
+    m = rec.openet_site_means(pd.concat([a, b], ignore_index=True), openet, periods, daily_oe)
+    get = lambda s, ds: m[(m["site"] == s) & (m["day_set"] == ds)].iloc[0]  # noqa: E731
+    assert len(m) == 4 and "US-CCC" not in set(m["site"])  # no observed ET there
+    cal = get("US-AAA", "calendar")
+    assert cal["n_days"] == 365 and cal["n_months_partial"] == 0 and not cal["openet_withheld"]
+    assert np.isclose(cal["openet_mm_d"], (2.0 * (365 - 62) + 3.0 * 31 + 4.0 * 31) / 365)  # May from May 2020
+    assert np.isclose(cal["obs_zero_filled_mm_d"], 2.0 * (25 * 11 + 10) / 365) and np.isnan(cal["obs_unclosed_mm_d"])
+    com = get("US-AAA", "common")  # 9 months x 25 days, March 15, July 10; May has no OpenET
+    assert (com["n_days"], com["n_months"], com["n_months_partial"]) == (250, 11, 12)
+    assert np.isclose(com["openet_mm_d"], (2.0 * 240 + 3.0 * 10) / 250)
+    assert np.isclose(com["obs_unclosed_mm_d"], 2.0) and np.isclose(com["obs_br_fdq_mdv_mm_d"], 2.5)
+    assert np.isclose(com["obs_zero_filled_mm_d"], 2.0)
+    assert np.isclose(com["openet_daily_mm_d"], 2.5) and np.isclose(cal["openet_daily_mm_d"], 2.5)
+    # US-BBB: the common days miss part of February and April (and all of May): 3 months, so the calendar mean
+    # would reveal them; withheld, the observed means kept
+    bc = get("US-BBB", "common")
+    assert bc["n_months_partial"] == 3 and bc["openet_withheld"] and np.isnan(bc["openet_mm_d"])
+    assert np.isnan(bc["openet_daily_mm_d"]) and np.isclose(bc["obs_unclosed_mm_d"], 1.0)
+    assert not get("US-BBB", "calendar")["openet_withheld"]
+
+
 def _determined(rows: list[np.ndarray]) -> list[int]:
     """Site-months (columns) whose OpenET value the rows' means fix: unit vectors in the rows' span."""
     if not rows:
@@ -839,6 +874,11 @@ def test_main_runs_without_and_with_base_files(tmp_path, rec, capsys):
     assert bias["openet_mm_d"].isna().all()
     header = (out / "go26_reconstructed_openet_bias.csv").read_text()
     assert "no single month's OpenET value" in header
+    sm = pd.read_csv(out / "go26_reconstructed_openet_sites.csv", comment="#").set_index("day_set")
+    assert list(sm["site"]) == ["US-UiC", "US-UiC"] and "openet_daily_mm_d" not in sm
+    assert np.isclose(sm.loc["calendar", "openet_mm_d"], 90 / 60) and sm.loc["calendar", "n_days"] == 60
+    assert sm.loc["common", "openet_withheld"] and np.isnan(sm.loc["common", "openet_mm_d"])  # 2 partial months
+    assert not (tmp_path / "derived").exists()  # no daily extract next to --openet: no daily check
     assert not (out / "go26_reconstructed_figure_check.csv").exists()  # no digitized series in this folder
 
 

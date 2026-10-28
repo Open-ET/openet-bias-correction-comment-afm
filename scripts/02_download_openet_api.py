@@ -11,7 +11,9 @@ OpenET collection v2.1 (which starts in 2016 in the API):
       reference ET (ETo) and precipitation
   daily, 2016-01 to 2025-07, one box per request: ensemble ET at US-UiC
       (GO26 Fig. 8), US-UTJ (Fig. S2) and the seven towers in the benchmark;
-      ETo and precipitation at US-UiC and US-UTJ
+      ETo and precipitation at US-UiC and US-UTJ; ensemble ET at the other
+      13 GO26 towers (OpenET over the days of each observed-ET variant,
+      scripts/10 and Figure 2 of the comment)
 
 Daily multipolygon requests for all boxes exceed the Earth Engine memory
 limit of a free account, hence the single-box daily requests (the API allows
@@ -23,8 +25,8 @@ precipitation is gridMET.  ``--verify-eto-ee`` checks the monthly ETo against
 the Earth Engine collection directly (needs ``pip install .[ee]`` and an
 authenticated Earth Engine account; no API requests).
 
-A run from scratch uses 24 of the 100 monthly requests of a free account (one
-upload, 10 monthly and 13 daily requests).  Responses are cached in
+A run from scratch uses 37 of the 100 monthly requests of a free account (one
+upload, 10 monthly and 26 daily requests).  Responses are cached in
 data/raw/openet_api/ with a request log (manifest.json: endpoint, parameters,
 collection version, UTC time and, from October 2026 on, the md5 of the GeoJSON
 of the boxes), so reruns only fetch missing files.  OpenET revises recent data
@@ -46,7 +48,8 @@ Outputs
   data/raw/openet_api/sites.csv, sites_200m.geojson   the boxes
   data/raw/openet_api/<request>.csv                   one file per request (raw)
   data/raw/openet_api/openet_monthly.csv              site, date, et_<model>, eto, pr
-  data/raw/openet_api/openet_daily.csv                site, date, et_ensemble, eto, pr
+  data/raw/openet_api/openet_daily.csv                site, date, et_ensemble, eto, pr (the nine towers above)
+  data/raw/openet_api/openet_daily_go26.csv           site, date, et_ensemble (all 22 GO26 towers)
   results/openet_api_eto_ee_check.csv                 with --verify-eto-ee
 
 Usage:
@@ -75,6 +78,13 @@ DAILY = ("2016-01-01", "2025-07-31")  # 3,500 days; covers every GO26 study peri
 SHARED = ["US-ARM", "US-Bi1", "US-Bi2", "US-Ne1", "US-Ne2", "US-Ne3", "US-xSL"]
 DAILY_ET_SITES = ["US-UiC", "US-UTJ", *SHARED]
 DAILY_MET_SITES = ["US-UiC", "US-UTJ"]
+# daily ensemble ET at every GO26 tower (the towers above and the other 13, requested last), assembled apart so that
+# openet_daily.csv, which scripts/12 reads, keeps the nine towers above
+DAILY_GO26 = "openet_daily_go26.csv"
+
+
+def go26_towers() -> list[str]:
+    return pd.read_csv(ROOT / "config" / "go26_sites.csv")["site"].tolist()
 
 
 def site_table(flux_root: Path | None) -> pd.DataFrame:
@@ -137,6 +147,8 @@ def plan() -> list[dict]:
              for s in DAILY_ET_SITES]
     reqs += [dict(interval="daily", variable=v, model="ensemble", start=DAILY[0], end=DAILY[1], site=s)
              for s in DAILY_MET_SITES for v in ("eto", "pr")]
+    reqs += [dict(interval="daily", variable="et", model="ensemble", start=DAILY[0], end=DAILY[1], site=s)
+             for s in go26_towers() if s not in DAILY_ET_SITES]
     for r in reqs:
         where = f"_{r['site']}" if r["site"] else ""
         r["tag"] = f"{r['interval']}_{r['variable']}_{r['model']}{where}_{r['start'][:4]}_{r['end'][:4]}"
@@ -144,17 +156,22 @@ def plan() -> list[dict]:
 
 
 def assemble(results: dict[str, pd.DataFrame]) -> None:
-    for interval in ("daily", "monthly"):
+    go26 = set(go26_towers())
+    outputs = {"openet_daily.csv": lambda r: r["interval"] == "daily" and (r["variable"] != "et"
+                                                                          or r["site"] in DAILY_ET_SITES),
+               DAILY_GO26: lambda r: r["interval"] == "daily" and r["variable"] == "et" and r["site"] in go26,
+               "openet_monthly.csv": lambda r: r["interval"] == "monthly"}
+    for file, keep in outputs.items():
         frames: dict[str, list[pd.DataFrame]] = {}
         for r in plan():
-            if r["interval"] == interval and r["tag"] in results:
+            if keep(r) and r["tag"] in results:
                 name = f"et_{r['model']}" if r["variable"] == "et" else r["variable"]
                 frames.setdefault(name, []).append(results[r["tag"]])
         if frames:
             w = oa.wide({k: pd.concat(v, ignore_index=True).drop_duplicates(["site", "date"])
                          for k, v in frames.items()})
-            w.to_csv(OUT / f"openet_{interval}.csv", index=False, float_format="%.4f")
-            print(f"wrote {OUT / f'openet_{interval}.csv'}: {len(w)} rows, {w['site'].nunique()} sites")
+            w.to_csv(OUT / file, index=False, float_format="%.4f")
+            print(f"wrote {OUT / file}: {len(w)} rows, {w['site'].nunique()} sites")
 
 
 def verify_eto_ee(fc: dict) -> None:

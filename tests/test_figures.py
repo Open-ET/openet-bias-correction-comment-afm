@@ -33,3 +33,21 @@ def test_table1_agreement_counts_and_tolerance_edge(figs):
     assert a.loc[gf, "mean_diff"] == pytest.approx(-0.02) and a.loc[gf, "rmsd"] == pytest.approx(np.sqrt(0.01 / 5))
     assert a.loc[cl, "n_sites"] == 4 and a.loc[cl, "mean_diff"] == pytest.approx((0.40 + 3 * 1.0) / 4)
     assert figs.table1_agreement(r, tol=0.25).loc[zf, "n_within_tol"] == 4
+
+
+def test_openet_agreement_pairs_each_panel_with_its_day_set(figs):
+    zf, va, gf, cl = figs.OPENET_SERIES
+    m = pd.DataFrame({"site": ["A", "B", "C", "A", "B", "C"],
+                      "day_set": ["calendar"] * 3 + ["common"] * 3,
+                      "openet_mm_d": [2.0, 3.0, 1.0, 2.2, 3.1, np.nan],  # C's common mean withheld
+                      "obs_zero_filled_mm_d": [1.0, 2.0, 1.0, 1.5, 2.5, 1.0],
+                      "obs_unclosed_mm_d": [np.nan] * 3 + [2.0, 3.0, 1.2],
+                      "obs_unclosed_mdv_mm_d": [np.nan] * 3 + [2.2, 3.1, 1.1],
+                      "obs_br_fdq_mdv_mm_d": [np.nan] * 3 + [2.7, np.nan, 1.5]})
+    a = figs.openet_agreement(m)
+    assert a.loc[zf, "n_sites"] == 3 and a.loc[zf, "bias"] == pytest.approx(2.0 / 3)
+    assert a.loc[zf, "rmsd"] == pytest.approx(np.sqrt(2.0 / 3))
+    assert a.loc[zf, "r"] == pytest.approx(np.corrcoef([2.0, 3.0, 1.0], [1.0, 2.0, 1.0])[0, 1])
+    assert a.loc[va, "n_sites"] == 2 and a.loc[va, "bias"] == pytest.approx(0.15) and np.isnan(a.loc[va, "r"])
+    assert a.loc[gf, "bias"] == pytest.approx(0.0) and a.loc[gf, "rmsd"] == pytest.approx(0.0)
+    assert a.loc[cl, "n_sites"] == 1 and a.loc[cl, "bias"] == pytest.approx(-0.5)

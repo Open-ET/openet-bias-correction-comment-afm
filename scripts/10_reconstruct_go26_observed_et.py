@@ -100,6 +100,12 @@ GO26 cite (one file per site; all inputs offline):
     bias of a row are left blank wherever they would let a single month's
     value, or any sum or difference over fewer than six site-months, be
     solved for (withhold_openet)
+  * per tower, the OpenET ensemble and the observed ET averaged over the
+    same days (Figure 2 of the comment; openet_site_means): every day of the
+    study period against the zero-filled sums, and the days on which every
+    valid-day variant exists against those variants; with the daily
+    extract of scripts/02, the daily ensemble over the same days as a check
+    (data/raw/openet_api/derived/, not deposited)
 
 Inputs
   data/raw/ameriflux_base/AMF_<SITE>_BASE_<HH|HR>_<ver>.csv  AmeriFlux BASE,
@@ -113,6 +119,7 @@ Inputs
       Provenance goes to data/raw/ameriflux_base/provenance.json.
   data/raw/ameriflux_public/  amerifluxr availability summary (scripts/11; optional)
   data/raw/openet_api/openet_monthly.csv  OpenET monthly ET (optional)
+  data/raw/openet_api/openet_daily_go26.csv  OpenET daily ET (optional)
 
 Outputs (results/; read the CSV files with pandas.read_csv(path, comment="#"))
   go26_observed_et_reconstruction.csv  one row per site ('BASE file not found'
@@ -128,6 +135,8 @@ Outputs (results/; read the CSV files with pandas.read_csv(path, comment="#"))
   go26_reconstructed_openet_bias.csv   OpenET bias by zone, season, month set
                                        and variant (OpenET values withheld
                                        where they could be solved for)
+  go26_reconstructed_openet_sites.csv  OpenET and observed ET over the same
+                                       days, per tower and day set (Figure 2)
 
 Usage:
   python scripts/10_reconstruct_go26_observed_et.py [--qc-flags]
@@ -701,6 +710,58 @@ def openet_bias(monthly: pd.DataFrame, openet: pd.DataFrame, zones: dict, report
     return withhold_openet(out, members, min_months) if min_months and len(out) else out
 
 
+def openet_site_means(daily: pd.DataFrame, openet: pd.DataFrame, periods: pd.DataFrame,
+                      openet_daily: pd.DataFrame | None = None,
+                      min_months: int = oc.MIN_STRATUM_MONTHS) -> pd.DataFrame:
+    """Observed ET and the OpenET ensemble averaged over the same days at each tower (mm/d; Figure 2 of the comment).
+
+    day_set 'calendar': every day of the study period, against the zero-filled daily sums (GO26's Table 1 as
+    reproduced); OpenET is the period's monthly total over its days, months without OpenET filled with the calendar
+    month's 2016-2025 mean (oe_mm_d of scripts/12).  day_set 'common': the days on which every valid-day variant
+    exists (VALID_VARIANTS, as month_set common_valid_months of the bias table) in months with OpenET, against
+    each variant's mean over these days; OpenET is the monthly total / days in month, weighted by these days in
+    each month.  The valid-day variants share one day set: means over each variant's own days differ in a few
+    months only, and their differences would reveal those months' OpenET.  OpenET is not CC BY: openet_mm_d of a
+    'common' row is blanked (openet_withheld) where its days miss part of 1 to ``min_months`` - 1 months of the
+    period, which the calendar mean would reveal; scripts/14 checks the table jointly with the other outputs.
+    With ``openet_daily`` (daily ensemble), openet_daily_mm_d is its mean over the same days, a sensitivity check
+    that is not for publication (single values could be solved for).
+    """
+    o = openet.assign(date=pd.to_datetime(openet["date"]))
+    od = (openet_daily.assign(date=pd.to_datetime(openet_daily["date"])).set_index(["site", "date"])["et_ensemble"]
+          if openet_daily is not None else None)
+    rows = []
+    for p in periods.itertuples(index=False):
+        d = daily[daily["site"].eq(p.site)]
+        m = o[o["site"].eq(p.site)].set_index("date")["et_ensemble"]
+        if d.empty or m.isna().all():
+            continue
+        filled, _ = oc.fill_monthly(m, p.period_start, p.period_end)
+        per_day = filled / filled.index.days_in_month  # OpenET of each month, mm/d
+        month = d["date"].dt.to_period("M").dt.to_timestamp()
+        common = d[[c for _, c in VALID_VARIANTS]].notna().all(axis=1) & month.isin(m.index[m.notna()])
+        for day_set, sel in (("calendar", pd.Series(True, index=d.index)), ("common", common)):
+            if not sel.any():
+                continue
+            s, mo = d[sel], month[sel]
+            n_m = mo.value_counts().reindex(filled.index, fill_value=0)
+            row = {"site": p.site, "koppen_go26": p.koppen_go26, "day_set": day_set, "n_days": len(s),
+                   "n_months": int((n_m > 0).sum()),
+                   "n_months_partial": int((n_m < filled.index.days_in_month).sum()),
+                   "openet_mm_d": float(per_day.reindex(mo).mean()),
+                   "obs_zero_filled_mm_d": s["et_hh_sum_zero_filled"].mean(),
+                   **{f"obs_{v}_mm_d": s[c].mean() if day_set == "common" else np.nan for v, c in VALID_VARIANTS}}
+            if od is not None:
+                row["openet_daily_mm_d"] = od.reindex(list(zip(s["site"], s["date"]))).mean()
+            rows.append(row)
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    out["openet_withheld"] = out["day_set"].eq("common") & out["n_months_partial"].between(1, min_months - 1)
+    out.loc[out["openet_withheld"], ["openet_mm_d", "openet_daily_mm_d"] if od is not None else "openet_mm_d"] = np.nan
+    return out
+
+
 def _determined_by(sets: list[frozenset], size: np.ndarray, shown: list[int]) -> int | None:
     """Smallest set in a combination of the ``shown`` sets that determines a single site-month, or None.
 
@@ -949,7 +1010,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--base-version", choices=["go26", "latest"], default="go26",
                     help="which BASE version to use where several are present")
     ap.add_argument("--openet", default=str(ROOT / "data/raw/openet_api/openet_monthly.csv"),
-                    help="OpenET monthly CSV from scripts/02 for the bias table ('' to skip)")
+                    help="OpenET monthly CSV from scripts/02 for the bias table and site means ('' to skip)")
+    ap.add_argument("--openet-daily", default=None,
+                    help="OpenET daily CSV from scripts/02 for the site means' daily check (default: "
+                         "openet_daily_go26.csv next to --openet; optional)")
     ap.add_argument("--amf-public", default=str(ROOT / "data/raw/ameriflux_public"),
                     help="cache of scripts/11 with the pinned availability summary ('' to skip the version check)")
     ap.add_argument("--min-valid-days", type=int, default=20, help="valid days for a month to count")
@@ -1156,6 +1220,42 @@ def main(argv: list[str] | None = None) -> None:
         print("OpenET bias (mm/d) by GO26 zone, all seasons:")
         with pd.option_context("display.width", 250):
             print(tab.round(2).to_string() if not tab.empty else "all withheld")
+
+    daily_path = Path(args.openet_daily) if args.openet_daily else openet_path.parent / "openet_daily_go26.csv"
+    openet_daily = pd.read_csv(daily_path, parse_dates=["date"]) if daily_path.exists() else None
+    means = openet_site_means(daily, openet, sites, openet_daily)
+    if means.empty:
+        return
+    write_csv(means.drop(columns="openet_daily_mm_d", errors="ignore"),
+              out_dir / "go26_reconstructed_openet_sites.csv", [
+        "OpenET ensemble (OpenET, https://openetdata.org; OpenET API Terms of Service) and observed ET rebuilt from",
+        "AmeriFlux BASE data (CC BY 4.0; site DOIs in go26_observed_et_reconstruction.csv) averaged over the same",
+        "days at each GO26 tower (mm/d), all records (no quality flags). day_set calendar: every day of the study",
+        "period; obs_zero_filled_mm_d: the zero-filled daily sums (GO26's Table 1 as reproduced); openet_mm_d: the",
+        "monthly totals over the period's days, months without OpenET filled with the calendar month's 2016-2025",
+        "mean (oe_mm_d of openet_api_go26_sites.csv). day_set common: the days on which every valid-day variant",
+        "exists (as month_set common_valid_months of go26_reconstructed_openet_bias.csv) in months with OpenET;",
+        "obs_<variant>_mm_d: each variant's mean over these days (definitions in go26_reconstructed_daily.csv);",
+        "openet_mm_d: the monthly total / days in month, weighted by these days in each month. n_months: months",
+        "with at least one of the days; n_months_partial: months of the period that miss some of their days.",
+        f"openet_withheld: openet_mm_d blank where 1-{n - 1} months miss some days (the calendar mean would reveal",
+        "them); scripts/14 checks this table jointly with the other OpenET statistics."])
+    print("\nOpenET minus observed ET over the same days, mean over towers (mm/d):")
+    for day_set, cols in (("calendar", ["zero_filled"]),
+                          ("common", ["zero_filled", "unclosed", "unclosed_mdv", "br_fdq_mdv", "ebr_mdv"])):
+        s = means[means["day_set"].eq(day_set)]
+        for v in cols:
+            diff = (s["openet_mm_d"] - s[f"obs_{v}_mm_d"]).dropna()
+            if len(diff):
+                print(f"  {day_set:8s} {v:13s} {diff.mean():+.2f} (RMSD {np.sqrt((diff ** 2).mean()):.2f}; "
+                      f"{len(diff)} towers)")
+    if openet_daily is not None:  # the daily check stays with the raw extracts (OpenET Terms of Service)
+        check = openet_path.parent / "derived" / "go26_openet_sites_daily_check.csv"
+        check.parent.mkdir(parents=True, exist_ok=True)
+        means.to_csv(check, index=False, float_format="%.4f")
+        d = (means["openet_daily_mm_d"] - means["openet_mm_d"]).dropna()
+        print(f"daily minus monthly OpenET over the same days: {d.min():+.3f} to {d.max():+.3f} mm/d, mean "
+              f"{d.mean():+.3f} ({len(d)} tower-day sets; {check}, not for publication)")
 
 
 if __name__ == "__main__":

@@ -269,3 +269,25 @@ def test_script02_flags_extracts_made_with_other_boxes(tmp_path):
              {"endpoint": "/raster/timeseries/polygon", "status": 200, "tag": "t5", "geojson_md5": "x"}]
     man.write_text(json.dumps({"calls": calls}))
     assert s02.stale_extracts(man, ["t1", "t2", "t3", "t4", "t5"], "x") == ["t3"]  # the latest entry counts
+
+
+def test_script02_assembles_the_go26_daily_extract_apart(tmp_path, monkeypatch, capsys):
+    s02 = _script02()
+    monkeypatch.setattr(s02, "OUT", tmp_path)
+    towers = ["US-UiC", "US-ARM", "US-AAA", "US-BBB"]  # two with daily ET already, two new
+    monkeypatch.setattr(s02, "go26_towers", lambda: towers)
+    reqs = s02.plan()
+    new = [r for r in reqs if r["tag"].startswith("daily_et_ensemble_US-AAA") or r["tag"].startswith(
+        "daily_et_ensemble_US-BBB")]
+    assert [r["site"] for r in reqs[-2:]] == ["US-AAA", "US-BBB"] and len(new) == 2  # requested last
+    assert len(reqs) == 10 + len(s02.DAILY_ET_SITES) + 2 * len(s02.DAILY_MET_SITES) + 2
+    day = pd.Timestamp("2020-01-01")
+    results = {r["tag"]: pd.DataFrame({"site": [r["site"] or "X"], "date": [day if r["site"] else day.replace(day=1)],
+                                       "value": [1.0]}) for r in reqs}
+    s02.assemble(results)
+    daily = pd.read_csv(tmp_path / "openet_daily.csv")
+    go26 = pd.read_csv(tmp_path / s02.DAILY_GO26)
+    assert set(daily["site"]) == set(s02.DAILY_ET_SITES)  # as scripts/12 reads it: no new towers
+    assert list(daily.columns) == ["site", "date", "et_ensemble", "eto", "pr"]
+    assert set(go26["site"]) == set(towers) and list(go26.columns) == ["site", "date", "et_ensemble"]
+    assert "openet_daily_go26.csv: 4 rows, 4 sites" in capsys.readouterr().out
